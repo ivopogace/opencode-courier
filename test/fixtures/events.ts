@@ -23,7 +23,6 @@ export function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["d
   const sent: any[] = []
   const logged: string[] = []
   const scanned: string[] = []
-  const nudges: number[] = []
   const options: { types?: readonly string[] }[] = []
   const times = new Map<string, Record<string, unknown>>()
   const transcripts = new Map<string, unknown[]>()
@@ -67,9 +66,8 @@ export function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["d
     ],
     now: () => 1_000_000,
     log: (message: string) => void logged.push(message),
-    nudge: () => void nudges.push(sent.length),
   } as unknown as WatchPorts
-  return { ports, sent, logged, store, scanned, nudges, times, transcripts, subscriptions: () => subscriptions, options }
+  return { ports, sent, logged, store, scanned, times, transcripts, subscriptions: () => subscriptions, options }
 }
 
 export const child = (parentID = "ses_parent") => ({

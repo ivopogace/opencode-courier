@@ -8,7 +8,6 @@ const Session = Schema.Struct({
   title: Schema.String,
   parentID: Schema.String,
   depth: Count,
-  group: Schema.optionalKey(Schema.String),
 })
 
 const Permission = Schema.Struct({

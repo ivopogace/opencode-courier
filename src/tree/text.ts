@@ -1,7 +1,7 @@
 import { obj, str } from "../platform/json.js"
 import { clipText, defuse, defuseBlock, END_TURN, ROOT_SPLIT_LINE, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
 import { retryDelay, type ModelRef } from "./domain.js"
-import type { Artifacts, CleanupResult, ExecutionError, HeldReport, LeftMember, Limits, Sent, Standing } from "./ports.js"
+import type { Artifacts, CleanupResult, ExecutionError, Limits, Sent } from "./ports.js"
 
 const STATUS_LIST = `${STATUSES.slice(0, -1).join(", ")} or ${STATUSES.at(-1)}`
 
@@ -15,9 +15,7 @@ export function childBrief(parentID: string, task: string, depth: number, limits
     "",
     `When you finish, send exactly one report: call courier_send with sessionID "${parentID}", a short account of what you did and ` +
       "status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: " +
-      "branch, commits, files, checks (each command you ran and its result). If the report holds something the other parts of " +
-      "the job need (a value, a path or a command they wait for, an assumption of the split that is wrong), put that in finding " +
-      "as well, in a sentence or two: a finding reaches the parent at once, also when the report itself is held for later.",
+      "branch, commits, files, checks (each command you ran and its result).",
     "If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a " +
       "concrete ask, then end your turn and wait for its answer; never end quietly.",
     "A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. " +
@@ -68,8 +66,7 @@ function splitRule(parentID: string, depth: number, limits: Limits) {
       "One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.",
     `- Say which in one line of your reply: ${SPLIT_LINE}.`,
     "- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with " +
-      "courier_tree or sleep: each report wakes you. A group name is for parts whose reports are of no " +
-      "use to you one at a time: it holds them for one wake. Check and integrate each part yourself when it reports " +
+      "courier_tree or sleep: each report wakes you. Check and integrate each part yourself when it reports " +
       `(never hand that checking to another session), and once every part has reported, send ${parentID} one combined report.`,
   ]
 }
@@ -85,7 +82,6 @@ export const HOST_REPORTS =
   `<subagent sessionID="…" state="…"> with that session's last text. It is the host's note that the turn ended, not the session's report. ` +
   "What counts is the report the session sends you with courier_send, or the courier's notice that it ended without one, each in a <courier> message. " +
   "The <subagent> message needs no reply and nothing done: when a turn brings you nothing else, end it in one line. " +
-  "For sessions in a group, wait for the group's reports, which come together in one message. " +
   "This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <subagent> message of a subagent " +
   "you started with OpenCode's subagent tool is that subagent's result."
 
@@ -137,7 +133,6 @@ export interface StandingRow {
   readonly sessionID: string
   readonly title: string
   readonly state: ChildState
-  readonly group?: { readonly name: string; readonly standing: Standing | "unknown" }
 }
 
 function stateWords(state: ChildState) {
@@ -160,32 +155,15 @@ function stateWords(state: ChildState) {
   }
 }
 
-function groupWords(name: string, standing: Standing | "unknown") {
-  const group = `group "${name}"`
-  switch (standing) {
-    case "held":
-      return `its report is held with ${group}`
-    case "out":
-      return `${group} waits for it`
-    case "released":
-      return `${group} was delivered`
-    case "unknown":
-      return `in ${group}`
-    default:
-      return `out of ${group} (${LEFT_HOW[standing]})`
-  }
-}
-
 export function standingEntry(rows: ReadonlyArray<StandingRow>) {
   const shown = rows.slice(-STANDING_MAX)
   const older = rows.length - shown.length
   return [
     `${STANDING_PREFIX} the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need ` +
-      "not look with courier_tree; a report, a group's reports or a notice still reach you as a message.",
+      "not look with courier_tree; a report or a notice still reaches you as a message.",
     ...shown.map((row) => {
       const title = defuseBlock(row.title.replace(/\s+/g, " ").trim())
-      const group = row.group ? `; ${groupWords(row.group.name, row.group.standing)}` : ""
-      return `- ${row.sessionID} "${clipText(title, TITLE_MAX)}": ${stateWords(row.state)}${group}`
+      return `- ${row.sessionID} "${clipText(title, TITLE_MAX)}": ${stateWords(row.state)}`
     }),
     ...(older ? [`${count(older, "older session")} not listed; courier_tree lists them.`] : []),
   ].join("\n")
@@ -208,7 +186,7 @@ export const childrenRefusal = (running: number, maxChildren: number) =>
 export const totalRefusal = (running: number, maxTotal: number, yours: number) =>
   `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once (maxTotal ${maxTotal}). ` +
   (yours === 0
-    ? "Do this part yourself: none of the sessions you started counts, so only reports already held for a group can still wake you."
+    ? "Do this part yourself: none of the sessions you started counts, so no report is still due to you."
     : "Do this part yourself, or answer any session you started that is blocked, end your turn and try again once one of them has reported, not in a loop. " +
       stillCounts("its parent drops"))
 
@@ -249,9 +227,7 @@ const strings = (value: unknown) => (Array.isArray(value) ? value.flatMap((item)
 
 const listed = (name: string, items: readonly string[]) => (items.length ? [`- ${name}: ${items.join(", ")}`] : [])
 
-const FINDING_LABEL ="Finding for the other parts:"
-
-export function reportBody(message: string, artifacts: Artifacts | undefined, finding?: string) {
+export function reportBody(message: string, artifacts: Artifacts | undefined) {
   const given = obj(artifacts)
   const checks = (Array.isArray(given.checks) ? given.checks : []).flatMap((check: unknown) => {
     const command = str(obj(check).command)?.trim()
@@ -263,16 +239,8 @@ export function reportBody(message: string, artifacts: Artifacts | undefined, fi
     ...listed("files", strings(given.files)),
     ...(checks.length ? ["- checks:", ...checks] : []),
   ]
-  return [message, ...(finding ? ["", FINDING_LABEL, finding] : []), ...(lines.length ? ["", "Artifacts:", ...lines] : [])].join("\n")
+  return [message, ...(lines.length ? ["", "Artifacts:", ...lines] : [])].join("\n")
 }
-
-export const findingAhead = (group: string, status: string, finding: string) =>
-  [
-    `A finding from this session's report (status ${status}), delivered ahead of it: the report is held with group "${group}" and reaches you ` +
-      "with the group's other reports. If other sessions you started need the finding, send it to them now with courier_send, only to those it affects.",
-    "",
-    finding,
-  ].join("\n")
 
 export const nativeIsolateRefusal = () =>
   "Not started: native: true and isolate: true cannot go together. OpenCode runs a session in a worktree of its own or as a " +
@@ -281,9 +249,7 @@ export const nativeIsolateRefusal = () =>
 export function spawnText(child: {
   readonly sessionID: string
   readonly directory: string
-  readonly group?: string
   readonly rosterError?: string
-  readonly groupError?: string
   readonly fromParent?: boolean
   readonly uncommitted?: boolean
   readonly model?: string
@@ -294,17 +260,11 @@ export function spawnText(child: {
     (child.uncommitted
       ? " Your working tree has uncommitted changes, which it does not see: commit them and tell it, or send them to it, if it needs them."
       : "") +
-    (child.rosterError ? ` It is not among your children: ${child.rosterError}` : "") +
-    (child.groupError ? ` It is in no group, so its report comes on its own: ${child.groupError}` : "")
+    (child.rosterError ? ` It is not among your children: ${child.rosterError}` : "")
   const asks = child.belowTop
     ? " Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person."
     : ""
-  const topAsks = child.belowTop ? "" : ", and so does a question or a permission request"
-  const reports = child.group
-    ? `Its report is held with group "${child.group}": once every session you started in that group has reported and your ` +
-      `turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a report's finding, a failed turn ` +
-      `or an end without a report still reaches you at once${topAsks}.${asks}`
-    : `It will report back with courier_send, which starts a new turn for you.${asks}`
+  const reports = `It will report back with courier_send, which starts a new turn for you.${asks}`
   const on = child.model ? `, on ${child.model}` : ""
   return (
     `Started session ${child.sessionID} in ${child.directory}${on}. ${reports} Once you have started every session you need, ` +
@@ -312,29 +272,13 @@ export function spawnText(child: {
   )
 }
 
-export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report" | "held" | "dropped" | "finding"> = {}) {
+export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report" | "dropped"> = {}) {
   if (sent.dropped)
     return (
       `Delivered to ${sessionID}, without the status ${sent.dropped}: a status belongs on a report to the session that ` +
       "started you, and means nothing on a message to a session you started."
     )
   const status = sent.status ? `, status ${sent.status}` : ""
-  if (sent.held) {
-    const { group, reported, members } = sent.held
-    const counted = reported !== undefined && members !== undefined
-    let when = `once ${sessionID}'s turn has ended, yours being the last.`
-    if (!counted || reported < members) {
-      const have = counted ? ` (${reported} of ${members} have)` : ""
-      when = `once every member of the group has reported${have}. Nothing more is needed from you for it.`
-    }
-    const finding = {
-      ahead: ` Its finding went to ${sessionID} now, ahead of the report.`,
-      unsent: ` Its finding could not be delivered ahead of it: send the finding to ${sessionID} now with courier_send without a status.`,
-      held: " Its finding goes in that message, under your report: with no other member left to report, nothing was sent ahead of it.",
-      none: "",
-    }[sent.finding ?? "none"]
-    return `Recorded as your report${status}. It is held with group "${group}" and goes to ${sessionID} in one message with the group's other reports, ${when}${finding} ${END_TURN}`
-  }
   if (sent.report === true) return `Delivered to ${sessionID} as your report${status}. ${END_TURN}`
   if (sent.report === false)
     return `Delivered to ${sessionID}. Without a status it is progress, not your report: when you finish, send one with status ${STATUS_LIST}.`
@@ -347,13 +291,11 @@ const keptLine = (result: Extract<CleanupResult, { readonly outcome: "kept" }>) 
 export function cleanupText(result: CleanupResult) {
   if (result.outcome === "kept")
     return `${keptLine(result)} ${result.sessionID} is not dropped yet: commit what you want to keep to a branch, then call courier_cleanup again, or call it now with force: true to discard it. Either call drops ${result.sessionID}.`
-  const done = {
+  return {
     removed: `Removed the worktree ${result.directory} of ${result.sessionID}.`,
     gone: `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from your children.`,
     forgotten: `${result.sessionID} ran in ${result.directory}, with no worktree of its own to remove; dropped it from your children.`,
   }[result.outcome]
-  if (!result.group) return done
-  return `${done} Dropped it from group "${result.group}" without a report: the group's other reports reach you once they are in and your turn has ended, the message naming it, and a report it sends after all comes on its own.`
 }
 
 export function treeText(tree: { readonly sessions: ReadonlyArray<unknown>; readonly truncated?: number }) {
@@ -365,7 +307,7 @@ export function treeText(tree: { readonly sessions: ReadonlyArray<unknown>; read
 }
 
 const IDLE_STOPPED =
-  "Stopping an idle session does not settle it: one that owed a report still owes it, stays in its join group and " +
+  "Stopping an idle session does not settle it: one that owed a report still owes it and " +
   "counts toward maxChildren and maxTotal until the session that started it drops it with courier_cleanup."
 
 export function stopText(result: {
@@ -407,12 +349,10 @@ export const stoppedNotice = (title: string, by: string) =>
     "It was not a failure and it will not report back. Carry on without it, or start a replacement if you still need what it was doing.",
   ].join("\n")
 
-const HOLDS_GROUP = "holds back its join group if it is in one"
-
 export const idleStoppedNotice = (title: string, by: string) =>
   [
     `This session, "${title}", which you started with courier_spawn, was stopped by ${by}, a session above you, together with the sessions under it.`,
-    `It was not running and still owed you a report, so it still counts toward maxChildren and maxTotal, and ${HOLDS_GROUP}. ` +
+    `It was not running and still owed you a report, so it still counts toward maxChildren and maxTotal. ` +
       "Drop it with courier_cleanup if you no longer need it, or message it with courier_send to have it carry on.",
   ].join("\n")
 
@@ -420,7 +360,6 @@ export const blockedStoppedNotice = (title: string, by: string) =>
   [
     `This session, "${title}", which you started with courier_spawn, was stopped by ${by}, a session above you, together with the sessions under it.`,
     "It was not running: it had sent you status blocked and was waiting on your answer. Do not send it that answer, since the work it asked about was stopped above you. " +
-      `It still ${HOLDS_GROUP}. ` +
       "Drop it with courier_cleanup if you no longer need it, or message it with courier_send if you still need it to carry on.",
   ].join("\n")
 
@@ -480,7 +419,7 @@ function belowLine(below: ReadonlyArray<string>) {
   )
 }
 
-export function failureNotice(title: string, error: ExecutionError, group?: string, at?: number, below: ReadonlyArray<string> = []) {
+export function failureNotice(title: string, error: ExecutionError, at?: number, below: ReadonlyArray<string> = []) {
   const status = error.status === undefined ? "" : `, status ${error.status}`
   const delay = retryDelay(error)
   const replace = below.length ? "" : " start a replacement,"
@@ -493,12 +432,6 @@ export function failureNotice(title: string, error: ExecutionError, group?: stri
       : `Do not message it with courier_send before then, as the turn would fail again. Message it after,${replace} or carry on without it; ` +
         "courier_later can remind you when the wait is over.",
     ...(below.length ? [belowLine(below)] : []),
-    ...(group
-      ? [
-          `It is a member of group "${group}", which no longer waits for it: its other members' reports reach you once they have ` +
-            "reported and your turn has ended, and if it reports after all before then, its report joins them.",
-        ]
-      : []),
   ].join("\n")
 }
 
@@ -533,7 +466,7 @@ export function forkNotice(originalID: string | undefined, parentID: string | un
 
 const QUOTED_REPLY_MAX = 2000
 
-export function silentNotice(title: string, lastText: string | undefined, progressed = false, group?: string) {
+export function silentNotice(title: string, lastText: string | undefined, progressed = false) {
   const reply = lastText?.trim()
   return [
     `This session, "${title}", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.`,
@@ -546,55 +479,5 @@ export function silentNotice(title: string, lastText: string | undefined, progre
       ? "Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement."
       : "Decide what it needs: message it with courier_send to have it carry on; or start a replacement.",
     "Until it reports, it counts toward your limits on the sessions you run at once, or until you drop it with courier_cleanup.",
-    ...(group
-      ? [
-          `It is a member of group "${group}", whose other reports are held until it reports: have it report, as above, so the group ` +
-            "reaches you, or, if you no longer need its report, drop it with courier_cleanup, which releases the group without it.",
-        ]
-      : []),
-  ].join("\n")
-}
-
-function statusCounts(reports: ReadonlyArray<Pick<HeldReport, "status">>) {
-  return STATUSES.flatMap((status) => {
-    const n = reports.filter((report) => report.status === status).length
-    return n ? [`${n} ${status}`] : []
-  }).join(", ")
-}
-
-const LEFT_HOW = {
-  failed: "its turn failed",
-  interrupted: "its turn was interrupted",
-  deleted: "it was deleted",
-  dropped: "you dropped it with courier_cleanup",
-}
-
-export function heldSoFar(group: string, reports: ReadonlyArray<HeldReport & { readonly sessionID: string; readonly title: string }>) {
-  if (!reports.length) return ""
-  return [
-    "",
-    "",
-    `Held with group "${group}" so far, ${count(reports.length, "report")}, shown now in case what this session needs is in ${reports.length === 1 ? "it" : "them"}. ` +
-      `The group's message brings ${reports.length === 1 ? "it" : "them"} again once every member has reported.`,
-    ...reports.flatMap((report) => ["", `- ${report.sessionID} "${report.title}": ${report.status}`, reportBody(report.message, report.artifacts, report.finding)]),
-  ].join("\n")
-}
-
-export function groupNotice(group: string, reports: ReadonlyArray<HeldReport & { readonly sessionID: string; readonly title: string }>, left: ReadonlyArray<LeftMember> = []) {
-  const total = reports.length + left.length
-  const listed = reports.flatMap((report, index) => [
-    "",
-    `[${index + 1}/${reports.length}] ${report.sessionID} "${report.title}": ${report.status}`,
-    reportBody(report.message, report.artifacts, report.finding),
-  ])
-  const named = left.map((member) => `${member.sessionID} "${member.title}" (${LEFT_HOW[member.by]})`).join(", ")
-  const without = left.length ? ["", `Without a report: ${named}.`] : []
-  const missing = left.length ? `, ${count(left.length, "member")} without a report, named at the end` : ""
-  return [
-    `Group "${group}" is complete: ${count(reports.length, "report")} of ${count(total, "member")} (${statusCounts(reports)})${missing}. Each report follows, with its status.`,
-    ...listed,
-    ...without,
-    "",
-    "Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do.",
   ].join("\n")
 }

@@ -2,12 +2,11 @@ import { describe, expect, test } from "bun:test"
 import { cleanup } from "../src/tree/cleanup.js"
 import { DEFAULT_LIMITS } from "../src/tree/domain.js"
 import { noteDeleted, noteInterrupted, notePrompt, reportFailure, reportSilent, type ExecutionFailed } from "../src/tree/events.js"
-import { deliverReleased, holdReport, joinGroup, membershipOf } from "../src/tree/group.js"
-import type { CleanupPorts, CourierPorts, GroupPorts, StopPorts, WatchPorts } from "../src/tree/ports.js"
+import type { CleanupPorts, CourierPorts, StopPorts, WatchPorts } from "../src/tree/ports.js"
 import { send } from "../src/tree/send.js"
 import { standingRows, stateOf, syncStanding } from "../src/tree/standing.js"
 import { stop } from "../src/tree/stop.js"
-import { childStore, groupStore } from "../src/tree/store.js"
+import { childStore } from "../src/tree/store.js"
 import { STANDING_KEY, STANDING_MAX, STANDING_PREFIX, standingEntry, type StandingRow } from "../src/tree/text.js"
 import { child, fakePorts } from "./fixtures/events.js"
 
@@ -43,7 +42,7 @@ const none = { at: undefined, by: undefined, status: undefined, resumesAt: undef
 const notes = (given: Partial<Record<"prompt" | "settled" | "progress" | "told" | "stopped", object>>) =>
   ({ prompt: none, settled: none, progress: none, told: none, stopped: none, ...given }) as any
 
-const line = (sessionID: string, title: string, state: StandingRow["state"], group?: StandingRow["group"]) => standingEntry([{ sessionID, title, state, ...(group ? { group } : {}) }])
+const line = (sessionID: string, title: string, state: StandingRow["state"]) => standingEntry([{ sessionID, title, state }])
 
 describe("stateOf", () => {
   test("reads a child's state from its report notes, as the silent-turn rule and courier_tree do", () => {
@@ -64,21 +63,22 @@ describe("stateOf", () => {
 describe("standingEntry", () => {
   const rows = (n: number): StandingRow[] => Array.from({ length: n }, (_, i) => ({ sessionID: `ses_${i}`, title: `part ${i}`, state: { kind: "working" } }))
 
-  test("begins with its prefix, lists each child with its state and its group's standing, and clips a long title", () => {
+  test("begins with its prefix, lists each child with its state and nothing after it, and clips a long title", () => {
     const text = standingEntry([
-      { sessionID: "ses_a", title: "  A long\n title ".padEnd(80, "x"), state: { kind: "reported", status: "done" }, group: { name: "pair", standing: "held" } },
-      { sessionID: "ses_b", title: "B", state: { kind: "working" }, group: { name: "pair", standing: "out" } },
-      { sessionID: "ses_c", title: "C", state: { kind: "failed" }, group: { name: "pair", standing: "failed" } },
-      { sessionID: "ses_d", title: "D", state: { kind: "stopped" }, group: { name: "old", standing: "released" } },
-      { sessionID: "ses_e", title: "E", state: { kind: "ended", progressed: true }, group: { name: "old", standing: "unknown" } },
+      { sessionID: "ses_a", title: "  A long\n title ".padEnd(80, "x"), state: { kind: "reported", status: "done" } },
+      { sessionID: "ses_b", title: "B", state: { kind: "working" } },
+      { sessionID: "ses_c", title: "C", state: { kind: "failed" } },
+      { sessionID: "ses_d", title: "D", state: { kind: "stopped" } },
+      { sessionID: "ses_e", title: "E", state: { kind: "ended", progressed: true } },
     ])
     expect(text).toStartWith(STANDING_PREFIX)
+    expect(text.split("\n")[0]).toEndWith("so you need not look with courier_tree; a report or a notice still reaches you as a message.")
     expect(text.split("\n").slice(1)).toEqual([
-      `- ses_a "A long title ${"x".repeat(27)}… [37 more characters]": reported done; its report is held with group "pair"`,
-      '- ses_b "B": working; group "pair" waits for it',
-      '- ses_c "C": its turn failed; out of group "pair" (its turn failed)',
-      '- ses_d "D": stopped; group "old" was delivered',
-      '- ses_e "E": ended its turn without a report, sent progress; in group "old"',
+      `- ses_a "A long title ${"x".repeat(27)}… [37 more characters]": reported done`,
+      '- ses_b "B": working',
+      '- ses_c "C": its turn failed',
+      '- ses_d "D": stopped',
+      '- ses_e "E": ended its turn without a report, sent progress',
     ])
   })
 
@@ -98,7 +98,6 @@ describe("standingEntry", () => {
         sessionID: `ses_${"x".repeat(26)}`,
         title: "t".repeat(200),
         state: { kind: "ended" as const, progressed: true },
-        group: { name: "g".repeat(60), standing: "interrupted" as const },
       })),
     )
     expect(longest.length).toBeLessThan(3000)
@@ -106,25 +105,23 @@ describe("standingEntry", () => {
 })
 
 describe("standingRows and syncStanding", () => {
-  test("reads a parent's children oldest first with their states and group standings, leaving out expired entries", async () => {
+  test("reads a parent's children oldest first with their states, leaving out expired entries and the group of an earlier release", async () => {
     const { ports } = watchPorts()
     const children = childStore(ports.storage)
-    const groups = groupStore(ports.storage)
     await children.record({ ...child(), sessionID: "ses_a", title: "A", createdAt: 1_000_001, group: "pair" })
     await children.record({ ...child(), sessionID: "ses_b", title: "B", createdAt: 1_000_002, group: "pair" })
     await children.record({ ...child(), sessionID: "ses_c", title: "C", createdAt: 1_000_003 })
     await children.record({ ...child(), sessionID: "ses_old", title: "Old", createdAt: 1_000_000 - 13 * 24 * 3_600_000 })
-    await joinGroup(groups, "ses_parent", "pair", "ses_a", "A", 1)
-    await joinGroup(groups, "ses_parent", "pair", "ses_b", "B", 2)
+    await ports.storage.set("group/ses_parent/pair/ses_a", { title: "A", joinedAt: 1, report: { at: 9, status: "done", message: "m" } })
+    await ports.storage.set("group/ses_parent/pair/ses_b", { title: "B", joinedAt: 2 })
     await children.prompted("ses_a", 5)
     await children.prompted("ses_b", 5)
     await children.settled("ses_a", "report", 9, "done")
-    await holdReport(groups, (await membershipOf(groups, "ses_parent", "pair", "ses_a"))!, { at: 9, status: "done", message: "m" })
 
     expect(await standingRows(ports.storage, "ses_parent", 1_000_000)).toEqual([
       { sessionID: "ses_old", title: "Old", state: { kind: "started" } },
-      { sessionID: "ses_a", title: "A", state: { kind: "reported", status: "done" }, group: { name: "pair", standing: "held" } },
-      { sessionID: "ses_b", title: "B", state: { kind: "working" }, group: { name: "pair", standing: "out" } },
+      { sessionID: "ses_a", title: "A", state: { kind: "reported", status: "done" } },
+      { sessionID: "ses_b", title: "B", state: { kind: "working" } },
       { sessionID: "ses_c", title: "C", state: { kind: "started" } },
     ])
     expect(await standingRows(ports.storage, "ses_parent", 1_000_000 + 14 * 24 * 3_600_000)).toHaveLength(3)
@@ -175,7 +172,7 @@ const failedEvent = (sessionID = "ses_child", id = "evt_1"): ExecutionFailed & {
 const sessionEvent = (type: string, id: string, created: number, sessionID = "ses_child", reason?: string) => ({ id, type, created, data: { sessionID, ...(reason ? { reason } : {}) } })
 
 function sendFrom(ports: WatchPorts, from: string, to: string, now: number, status?: "done" | "blocked" | "partial") {
-  const courier = { session: { synthetic: async () => ({ id: "msg_r" }), instructions: (ports.session as any).instructions }, storage: ports.storage, now: () => now, nudge: ports.nudge, log: ports.log } as unknown as CourierPorts
+  const courier = { session: { synthetic: async () => ({ id: "msg_r" }), instructions: (ports.session as any).instructions }, storage: ports.storage, now: () => now, log: ports.log } as unknown as CourierPorts
   return send(courier, from, { sessionID: to, message: "m", ...(status ? { status } : {}) })
 }
 
@@ -202,20 +199,16 @@ describe("the standing through the tools and events", () => {
     expect(calls).toEqual([])
   })
 
-  test("shows a member's report held with its group, and the group delivered once the scheduler releases it", async () => {
-    const { ports, standingOf, instructions } = watchPorts()
+  test("a report from a child whose roster entry names a group of an earlier release moves the standing like any report", async () => {
+    const { ports, standingOf } = watchPorts()
     const children = childStore(ports.storage)
     await children.record({ ...child(), sessionID: "ses_a", title: "A", group: "pair" })
-    await joinGroup(groupStore(ports.storage), "ses_parent", "pair", "ses_a", "A", 1)
+    await ports.storage.set("group/ses_parent/pair/ses_a", { title: "A", joinedAt: 1 })
     await children.prompted("ses_a", 5)
 
     const sent = await sendFrom(ports, "ses_a", "ses_parent", 10, "done")
-    expect(sent.held?.group).toBe("pair")
-    expect(standingOf("ses_parent")).toBe(line("ses_a", "A", { kind: "reported", status: "done" }, { name: "pair", standing: "held" }))
-
-    const group: GroupPorts = { storage: ports.storage, session: { synthetic: ports.session.synthetic, get: async () => ({ time: { idle: 1_000 } }), instructions } as any, now: () => 2_000, log: ports.log }
-    await deliverReleased(group, new Set())
-    expect(standingOf("ses_parent")).toBe(line("ses_a", "A", { kind: "reported", status: "done" }, { name: "pair", standing: "released" }))
+    expect(sent).toEqual({ messageID: "msg_r", status: "done", report: true })
+    expect(standingOf("ses_parent")).toBe(line("ses_a", "A", { kind: "reported", status: "done" }))
   })
 
   test("a child's failed turn, silent end, interruption and deletion each move its parent's standing, the last removing it", async () => {

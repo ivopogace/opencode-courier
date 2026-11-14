@@ -29,7 +29,6 @@ import {
 import { addSkill } from "./skill.js"
 import {
   addTreeTools,
-  deliverReleased,
   wakeMissed,
   dirtyOf,
   headOf,
@@ -59,11 +58,10 @@ const shown = sharedState<FormsShown>("formsShown", () => new Map())
 
 const jobs: TickJob[] = [
   dueJob,
-  (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
   (owner, claimed) => wakeMissed(owner.later as LaterPorts, claimed),
 ]
 
-const { join, track, nudge } = openInProcess(jobs)
+const { join, track } = openInProcess(jobs)
 
 const permissions = domains as () => Iterable<Permissions>
 
@@ -101,7 +99,6 @@ export const courier = () => Plugin.define({
       limits,
       gate,
       roles,
-      nudge,
       log,
       session: ctx.session,
       agent: ctx.agent,
@@ -169,7 +166,6 @@ export const courier = () => Plugin.define({
       permissions,
       now: questionPorts.now,
       log: later.log,
-      nudge,
     }
     await Promise.resolve()
       .then(() => ctx.session.hook("experimental.idle", (event) => onIdle(watchPorts, watchState.seen, outside, event).then(() => undefined)))

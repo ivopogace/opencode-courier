@@ -1,8 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 import { describeFailure } from "../kernel/protocol.js"
-import { standingOf, startedAs } from "./domain.js"
+import { startedAs } from "./domain.js"
 import type { CourierPorts, RosterEntry } from "./ports.js"
-import { groupStore } from "./store.js"
 
 type Context = Plugin.Context
 
@@ -38,8 +37,7 @@ export function lastReply(messages: Awaited<ReturnType<Context["session"]["conte
 }
 
 export async function described(ports: CourierPorts, entry: RosterEntry) {
-  const group = entry.group ? { group: { name: entry.group, report: await standingIn(ports, entry, entry.group) } } : {}
-  const roster = { directory: entry.directory, ...startedAs(entry), created: entry.createdAt, ...group }
+  const roster = { directory: entry.directory, ...startedAs(entry), created: entry.createdAt }
   try {
     return { ...(await status(ports, { sessionID: entry.sessionID })), ...roster }
   } catch (error) {
@@ -50,10 +48,6 @@ export async function described(ports: CourierPorts, entry: RosterEntry) {
       error: describeFailure("reading the session", error).message,
     }
   }
-}
-
-export function standingIn(ports: Pick<CourierPorts, "storage">, entry: RosterEntry, group: string) {
-  return groupStore(ports.storage).member(entry.parentID, group, entry.sessionID).then(standingOf, () => "unknown" as const)
 }
 
 function withoutUndefined<T extends Record<string, unknown>>(value: T) {

@@ -196,24 +196,16 @@ describe("roster", () => {
       expect(ids(await lineage(storage, "ses_child"))).toEqual(["ses_child"])
     })
 
-    test("removes the reverse key with the entry, and the entry's group membership", async () => {
+    test("removes the reverse key with the entry, and leaves a group key an earlier release wrote", async () => {
       const { storage, store } = fakeStorage()
       await childStore(storage).record(entry("ses_a", "ses_parent", 1))
       await childStore(storage).record({ ...entry("ses_b", "ses_parent", 2), group: "pair" })
       store.set("group/ses_parent/pair/ses_b", { title: "b", joinedAt: 2 })
-      store.set("group/ses_parent/pair/ses_c", { title: "c", joinedAt: 3 })
 
       await forgetChild(storage, "ses_parent", "ses_a")
-      await forgetChild(storage, "ses_parent", "ses_b", "pair")
+      await forgetChild(storage, "ses_parent", "ses_b")
 
-      expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_c"])
-      store.set("roster/ses_parent/ses_c", { ...entry("ses_c", "ses_parent", 3), group: "pair" })
-      await forgetChild(storage, "ses_parent", "ses_c", "pair")
-      expect([...store.keys()]).toEqual([])
-      store.set("group/ses_parent/pair/ses_d", { title: "d", joinedAt: 4, report: { at: 5, status: "done", message: "m" } })
-      store.set("roster/ses_parent/ses_d", { ...entry("ses_d", "ses_parent", 4), group: "pair" })
-      await forgetChild(storage, "ses_parent", "ses_d", "pair")
-      expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_d"])
+      expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_b"])
     })
 
     test("back-fills missing reverse keys and drops those whose entry is gone, once however often it runs", async () => {

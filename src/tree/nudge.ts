@@ -1,9 +1,8 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim } from "../platform/bounded.js"
-import { hasCompleteGroup } from "./group.js"
 import type { ChildStore, Waits, WatchPorts } from "./ports.js"
 import { awaited, reportOf, stoppedSincePrompt } from "./report.js"
-import { childStore, groupStore } from "./store.js"
+import { childStore } from "./store.js"
 import { reportReminder } from "./text.js"
 
 export interface Idle {
@@ -17,7 +16,6 @@ async function waits(ports: NudgePorts, outside: Waits, sessionID: string, promp
   const children = childStore(ports.storage)
   const started = await children.children(sessionID)
   if ((await Promise.all(started.map((entry) => awaited(children, entry.sessionID)))).includes(true)) return true
-  if (started.some((entry) => entry.group) && (await hasCompleteGroup(groupStore(ports.storage), sessionID))) return true
   return outside(ports, sessionID, prompt)
 }
 

@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { DEFAULT_LIMITS } from "../src/tree/domain.js"
-import { joinGroup } from "../src/tree/group.js"
 import { cancelScheduled, schedule, type LaterPorts } from "../src/scheduling/index.js"
 import { blockedStoppedNotice, idleStoppedNotice, stoppedNotice, stopText, treeText } from "../src/tree/text.js"
 import { stoppedSincePrompt } from "../src/tree/report.js"
-import { childStore, groupStore, memberKey, progressKey, promptKey, settledKey, stoppedKey, wakeStore } from "../src/tree/store.js"
+import { childStore, progressKey, promptKey, settledKey, stoppedKey, wakeStore } from "../src/tree/store.js"
 import type { RosterEntry, StopPorts } from "../src/tree/ports.js"
 import { SETTLE_MS, stop } from "../src/tree/stop.js"
 import { RETENTION_MS } from "../src/tree/roster.js"
@@ -58,14 +57,12 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
         }
       : {}),
   }
-  const nudges: number[] = []
   const courier = {
     storage,
     session,
     limits: { ...DEFAULT_LIMITS, maxTotal: 20 },
     now: () => 5_000,
     log: (message: string) => void logs.push(message),
-    nudge: () => void nudges.push(1),
     pending: async () => [],
     forms: async () => [],
   }
@@ -75,7 +72,6 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
     storage,
     projectID: "proj",
     now: () => 5_000,
-    nudge: courier.nudge,
     worktree: { remove: async (input: any) => void removed.push(input) },
     inspect: async (directory: string) => (options.inspect ? options.inspect(directory) : { changes: [], commits: [] }),
   }
@@ -87,7 +83,7 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
     entry("leaf2", "mid", 4),
   ]
   for (const one of entries) await childStore(storage as any).record(one)
-  return { ports, store, calls, logs, removed, nudges }
+  return { ports, store, calls, logs, removed }
 }
 
 describe("subtree", () => {
@@ -200,12 +196,12 @@ describe("tree", () => {
     const sub = result.sessions.at(-1)!
     expect(sub).toMatchObject({ sessionID: "sub1", parentID: "root", subagent: true, isolated: false })
     expect(sub).not.toHaveProperty("report")
-    expect(Object.values(sub).includes(undefined)).toBe(false)
+    expect((Object.values(sub) as unknown[]).includes(undefined)).toBe(false)
   })
 
-  test("gives each session its status, depth, parent, group standing, report state and isolation", async () => {
+  test("gives each session its status, depth, parent, report state and isolation, and no group of an earlier release", async () => {
     const { ports, store } = await fixture()
-    await joinGroup(groupStore(ports.courier.storage), "root", "g", "mid", "title mid", 1)
+    store.set("group/root/g/mid", { title: "title mid", joinedAt: 1 })
     store.set(promptKey("mid"), { at: 10 })
     store.set(settledKey("mid"), { at: 20, by: "report", status: "partial" })
     store.set(progressKey("mid"), { at: 15 })
@@ -221,10 +217,11 @@ describe("tree", () => {
       ["side", 1, "root"],
     ])
     const [mid, leaf1, leaf2] = result.sessions
-    expect(mid).toMatchObject({ isolated: true, group: { name: "g", report: "out" }, report: { owes: false, progressed: true, ended: false, status: "partial" } })
+    expect(mid).toMatchObject({ isolated: true, report: { owes: false, progressed: true, ended: false, status: "partial" } })
+    expect(mid).not.toHaveProperty("group")
     expect(leaf1).not.toHaveProperty("report")
     expect(leaf2).toMatchObject({ isolated: false, report: { owes: true, progressed: false, ended: false } })
-    expect(Object.values(mid!).includes(undefined)).toBe(false)
+    expect((Object.values(mid!) as unknown[]).includes(undefined)).toBe(false)
   })
 
   test("lists at most maxTotal sessions, the live ones first, then the newest with what is above them, and counts the rest", async () => {
@@ -448,7 +445,7 @@ describe("stop", () => {
 
     expect(result.stopped).toMatchObject([{ sessionID: "leaf1", outcome: "idle" }])
     expect(stopText(result)).toContain(
-      "Stopping an idle session does not settle it: one that owed a report still owes it, stays in its join group and counts toward maxChildren and maxTotal until the session that started it drops it with courier_cleanup.",
+      "Stopping an idle session does not settle it: one that owed a report still owes it and counts toward maxChildren and maxTotal until the session that started it drops it with courier_cleanup.",
     )
     expect(calls.some((call) => call.method === "synthetic")).toBe(false)
     expect(result.told).toBeUndefined()
@@ -501,20 +498,6 @@ describe("stop", () => {
     expect(told[0]!.input.text).not.toContain("still owed you a report")
     expect(result.told).toBe("mid")
     expect(store.get(settledKey("leaf1"))).toMatchObject({ status: "blocked" })
-  })
-
-  test("tells the parent of a stopped blocked group member that it still holds back its group, and leaves it in (#523)", async () => {
-    const { ports, store, calls } = await fixture({ idle: ["leaf1"] })
-    store.set(promptKey("leaf1"), { at: 1_000 })
-    store.set(settledKey("leaf1"), { at: 2_000, by: "report", status: "blocked" })
-    await joinGroup(groupStore(ports.courier.storage), "mid", "g", "leaf1", "title leaf1", 1)
-
-    await stop(ports, "root", { sessionID: "leaf1" })
-
-    const told = calls.filter((call) => call.method === "synthetic")
-    expect(told).toHaveLength(1)
-    expect(told[0]!.input.text).toContain("It still holds back its join group if it is in one.")
-    expect(store.get(memberKey("mid", "g", "leaf1"))).toEqual({ title: "title leaf1", joinedAt: 1 })
   })
 
   test("tells no one of an idle target whose blocked report its parent answered and that then reported done", async () => {
@@ -591,15 +574,6 @@ describe("stop", () => {
     expect([...store.keys()].filter((key) => key.startsWith("later/"))).toEqual([`later/${c.id}`])
     expect(order.every((line) => line.endsWith("with 1 left"))).toBe(true)
     void calls
-  })
-
-  test("a group member that is stopped leaves its group through the interrupt event, as before", async () => {
-    const { ports, store } = await fixture()
-    await joinGroup(groupStore(ports.courier.storage), "root", "g", "mid", "title mid", 1)
-
-    await stop(ports, "root", { sessionID: "mid" })
-
-    expect(store.get(memberKey("root", "g", "mid"))).toEqual({ title: "title mid", joinedAt: 1 })
   })
 
   test("looks again for a session started meanwhile and stops it too", async () => {

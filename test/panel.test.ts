@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { cancelScheduled, type LaterPorts } from "../src/scheduling/index.js"
 import { DEFAULT_LIMITS, type RosterEntry } from "../src/tree/domain.js"
-import { holdReport, joinGroup } from "../src/tree/group.js"
 import { contextOf, lastTool, panel } from "../src/tree/panel.js"
 import type { CleanupPorts, CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/ports.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
-import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
+import { childStore, wakeStore } from "../src/tree/store.js"
 
 type Session = { updated: number; idle?: number; archived?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
 type Window = { providerID: string; id: string; context: number; variants?: string[] }
@@ -36,7 +35,6 @@ function fakePorts(
   const ports = {
     now: () => 1_000,
     log: () => {},
-    nudge: () => {},
     storage,
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
@@ -238,25 +236,25 @@ describe("panel", () => {
     })
   })
 
-  test("names a turn that ended without a report, a group member's standing, and a session OpenCode no longer knows", async () => {
+  test("names a turn that ended without a report and a session OpenCode no longer knows, and no group of an earlier release", async () => {
     const { ports } = fakePorts({ ses_failed: { updated: 5, idle: 5, outcome: "failed" }, ses_held: { updated: 5, idle: 5 } })
     const children = childStore(ports.storage)
-    const groups = groupStore(ports.storage)
     for (const sessionID of ["ses_failed", "ses_held", "ses_gone"]) {
       await children.record(entry(sessionID, "ses_root", { group: "pair" }))
-      await joinGroup(groups, "ses_root", "pair", sessionID, sessionID, 900)
+      await ports.storage.set(`group/ses_root/pair/${sessionID}`, { title: sessionID, joinedAt: 900 })
       await children.prompted(sessionID, 900)
     }
     await children.settled("ses_failed", "failed", 950)
     await children.settled("ses_held", "report", 950, "partial")
-    await holdReport(groups, { parentID: "ses_root", group: "pair", sessionID: "ses_held", title: "ses_held", joinedAt: 900 }, { at: 950, status: "partial", message: "Half" })
+    await ports.storage.set("group/ses_root/pair/ses_held", { title: "ses_held", joinedAt: 900, report: { at: 950, status: "partial", message: "Half" } })
 
     const { rows } = await panel(ports, "ses_root")
-    expect(rows.map(({ sessionID, state, outcome, report, group }) => ({ sessionID, state, outcome, report, group }))).toEqual([
-      { sessionID: "ses_failed", state: "idle", outcome: "failed", report: { state: "ended", progressed: false }, group: { name: "pair", standing: "out" } },
-      { sessionID: "ses_held", state: "idle", outcome: undefined, report: { state: "reported", status: "partial", progressed: false }, group: { name: "pair", standing: "held" } },
-      { sessionID: "ses_gone", state: "gone", outcome: undefined, report: { state: "owed", progressed: false }, group: { name: "pair", standing: "out" } },
+    expect(rows.map(({ sessionID, state, outcome, report }) => ({ sessionID, state, outcome, report }))).toEqual([
+      { sessionID: "ses_failed", state: "idle", outcome: "failed", report: { state: "ended", progressed: false } },
+      { sessionID: "ses_held", state: "idle", outcome: undefined, report: { state: "reported", status: "partial", progressed: false } },
+      { sessionID: "ses_gone", state: "gone", outcome: undefined, report: { state: "owed", progressed: false } },
     ])
+    for (const row of rows) expect(row).not.toHaveProperty("group")
     expect(rows[2]).not.toHaveProperty("cost")
     expect(rows[2]!.title).toBe("entry ses_gone")
   })
@@ -460,7 +458,6 @@ async function registered(sessions: Record<string, Session>) {
     projectID: "prj",
     inspect: async () => ({ changes: [], commits: [] }),
     now: () => 1_000,
-    nudge: () => {},
   }
   const stopPorts = { courier: ports, cancelScheduled: (sessionID: string) => cancelScheduled(later, sessionID), cleanup } as unknown as StopPorts
   let handlers: any

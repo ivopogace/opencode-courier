@@ -1,5 +1,4 @@
 import type { Plugin } from "@opencode/plugin"
-import type { Status } from "../kernel/protocol.js"
 import { millis, obj } from "../platform/json.js"
 
 type Context = Plugin.Context
@@ -158,41 +157,6 @@ export interface Artifacts {
   readonly files?: ReadonlyArray<string>
   readonly checks?: ReadonlyArray<{ readonly command: string; readonly result: string }>
 }
-
-export interface HeldReport {
-  readonly at: number
-  readonly status: Status
-  readonly message: string
-  readonly artifacts?: Artifacts
-  readonly finding?: string
-}
-
-export interface LeftMember {
-  readonly sessionID: string
-  readonly title: string
-  readonly by: "failed" | "interrupted" | "deleted" | "dropped"
-}
-
-const GROUP_NAME = /^[\w.-]{1,60}$/
-
-export const isGroupName = (value: unknown): value is string => typeof value === "string" && GROUP_NAME.test(value)
-
-export interface Member {
-  readonly title: string
-  readonly joinedAt: number
-  readonly report?: HeldReport
-  readonly left?: { readonly at: number; readonly by: LeftMember["by"] }
-}
-
-export type Standing = "held" | "out" | LeftMember["by"] | "released"
-
-export function standingOf(member: Member | undefined): Standing {
-  if (!member) return "released"
-  if (member.report) return "held"
-  return member.left?.by ?? "out"
-}
-
-export const complete = (members: ReadonlyArray<Member>) => members.every((member) => member.report || member.left)
 
 const RETRY_MAX_MS = 30 * 24 * 3_600_000
 

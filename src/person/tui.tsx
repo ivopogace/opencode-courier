@@ -75,7 +75,6 @@ export function askFooter(ask: Ask) {
   const top = ask.session.depth === 0
   return [
     top ? "top session" : `depth ${ask.session.depth}`,
-    ask.session.group ? `group ${ask.session.group}` : "",
     ask.kind === "permission" && ask.prompted ? "the top's prompt asks" : "",
     ask.kind === "question" && ask.question.stopped ? "cut off, answered by message" : "",
   ]

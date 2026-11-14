@@ -1,11 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { DEFAULT_LIMITS, type RosterEntry } from "../src/tree/domain.js"
-import { holdReport, joinGroup, leaveGroup } from "../src/tree/group.js"
 import type { CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/ports.js"
 import { RETENTION_MS } from "../src/tree/roster.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
-import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
+import { childStore, wakeStore } from "../src/tree/store.js"
 import { summary } from "../src/tree/summary.js"
 
 type Times = { updated: number; idle?: number; archived?: number; rest?: true }
@@ -153,45 +152,16 @@ describe("summary", () => {
     expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, groups: [] })
   })
 
-  test("lists the groups of the session's own children, with how many reported of those that have not left", async () => {
-    const { ports } = fakePorts({
-      ses_a: { updated: 5, idle: 5 },
-      ses_b: { updated: 5 },
-      ses_c: { updated: 5, idle: 5 },
-      ses_x: { updated: 5 },
-      ses_y: { updated: 5 },
-    })
-    const children = childStore(ports.storage)
-    const groups = groupStore(ports.storage)
-    for (const [child, group] of [["ses_a", "pair"], ["ses_b", "pair"], ["ses_c", "pair"]] as const) {
-      await children.record(entry(child, "ses_root", group))
-      await joinGroup(groups, "ses_root", group, child, child, 900)
-    }
-    await holdReport(groups, { parentID: "ses_root", group: "pair", sessionID: "ses_a", title: "ses_a", joinedAt: 900 }, {
-      at: 950,
-      status: "done",
-      message: "Done",
-    })
-    await leaveGroup(groups, "ses_root", "pair", "ses_c", "failed", 960)
-    await children.record(entry("ses_x", "ses_b"))
-    await children.record(entry("ses_y", "ses_x", "inner"))
-    await joinGroup(groups, "ses_x", "inner", "ses_y", "ses_y", 900)
-
-    expect((await summary(ports, "ses_root")).groups).toEqual([{ name: "pair", reported: 1, members: 2 }])
-  })
-
-  test("reads the groups from the group store: a released one is gone, a held report outlives its member's entry", async () => {
+  test("always sends an empty groups field, which a terminal left open from an earlier release maps over, whatever group keys storage holds", async () => {
     const { ports } = fakePorts({ ses_a: { updated: 5, idle: 5 } })
-    const groups = groupStore(ports.storage)
     await childStore(ports.storage).record(entry("ses_a", "ses_root", "pair"))
-    await joinGroup(groups, "ses_root", "trio", "ses_gone", "ses_gone", 900)
-    await holdReport(groups, { parentID: "ses_root", group: "trio", sessionID: "ses_gone", title: "ses_gone", joinedAt: 900 }, {
-      at: 950,
-      status: "done",
-      message: "Done",
-    })
+    await ports.storage.set("group/ses_root/pair/ses_a", { title: "ses_a", joinedAt: 900, report: { at: 950, status: "done", message: "Done" } })
+    await ports.storage.set("group/ses_root/pair/ses_b", { title: "ses_b", joinedAt: 900 })
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 0, idle: 1, groups: [{ name: "trio", reported: 1, members: 1 }] })
+    const sent = await summary(ports, "ses_root")
+
+    expect(sent).toEqual({ running: 0, waiting: 0, idle: 1, groups: [] })
+    expect(sent.groups.map((group) => group)).toEqual([])
   })
 
   test("counts every session of a tree past maxTotal, the newest one waiting on the person among them", async () => {

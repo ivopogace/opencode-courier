@@ -192,31 +192,19 @@ async function renderFooter(claim: SlotClaim | undefined, sessionID: () => strin
 const settle = () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50))
 
 describe("summaryLine", () => {
-  test("names what the sessions do and each group's standing, leaving out what is zero", () => {
-    expect(summaryLine({ running: 2, waiting: 1, idle: 0, groups: [{ name: "pair", reported: 1, members: 2 }] })).toBe(
-      "courier 1 waiting on you · 2 running · group pair 1/2",
-    )
+  test("names what the sessions do, leaving out what is zero and the groups a server part of an earlier release still sends", () => {
+    expect(summaryLine({ running: 2, waiting: 1, idle: 0, groups: [{ name: "pair", reported: 1, members: 2 }] })).toBe("courier 1 waiting on you · 2 running")
     expect(summaryLine({ ...empty, idle: 3 })).toBe("courier 3 idle")
   })
 
-  test("keeps whole parts within the width, the groups it drops counted", () => {
-    const summary = {
-      running: 2,
-      waiting: 1,
-      idle: 3,
-      groups: [
-        { name: "tests", reported: 1, members: 3 },
-        { name: "docs", reported: 0, members: 2 },
-        { name: "api", reported: 2, members: 2 },
-      ],
-    }
-    const full = "courier 1 waiting on you · 2 running · group tests 1/3 · group docs 0/2 · group api 2/2 · 3 idle"
+  test("keeps whole parts within the width", () => {
+    const summary = { ...empty, running: 2, waiting: 1, stalled: 1, idle: 3 }
+    const full = "courier 1 waiting on you · 1 stalled · 2 running · 3 idle"
     expect(summaryLine(summary)).toBe(full)
     expect(summaryLine(summary, full.length)).toBe(full)
-    expect(summaryLine(summary, full.length - 1)).toBe("courier 1 waiting on you · 2 running · group tests 1/3 · group docs 0/2 · group api 2/2")
-    expect(summaryLine(summary, 83)).toBe("courier 1 waiting on you · 2 running · group tests 1/3 · group docs 0/2 · +1 group")
-    expect(summaryLine(summary, 60)).toBe("courier 1 waiting on you · 2 running · +3 groups")
-    expect(summaryLine(summary, 40)).toBe("courier 1 waiting on you · +3 groups")
+    expect(summaryLine(summary, full.length - 1)).toBe("courier 1 waiting on you · 1 stalled · 2 running")
+    expect(summaryLine(summary, 40)).toBe("courier 1 waiting on you · 1 stalled")
+    expect(summaryLine(summary, 30)).toBe("courier 1 waiting on you")
   })
 
   test("drops idle without a count, and keeps what waits even when it alone is too wide", () => {
@@ -237,12 +225,13 @@ describe("summaryLine", () => {
 
 describe("the footer status entry", () => {
   test("shows the summary the server's RPC gives for the open session, asked at the TUI's location", async () => {
-    const fake = fakeContext(async () => ({ running: 2, waiting: 1, idle: 0, groups: [{ name: "pair", reported: 1, members: 2 }] }))
+    const fake = fakeContext(async () => ({ running: 2, waiting: 1, idle: 0, groups: [] }))
     await tui.setup(fake.context)
     const app = await renderFooter(fake.claim("prompt.footer.status"), () => "ses_parent")
 
-    await app.waitForFrame((frame) => frame.includes("group pair"))
-    expect(app.captureCharFrame()).toContain("courier 1 waiting on you · 2 running · group pair 1/2")
+    await app.waitForFrame((frame) => frame.includes("2 running"))
+    expect(app.captureCharFrame()).toContain("courier 1 waiting on you · 2 running")
+    expect(app.captureCharFrame()).not.toContain("group")
     expect(fake.calls).toEqual([[{ sessionID: "ses_parent" }, { location: { directory: "/workspace" } }]])
   })
 
@@ -437,10 +426,9 @@ describe("the tree panel's lines", () => {
     expect(parts([...rows, row("ses_sub", { subagent: true, report: undefined })], "ses_parent")).toEqual({ reported: 1, started: 3 })
   })
 
-  test("a status line names what the session does, its report, its group standing and its isolation", () => {
-    expect(statusLine(row("ses_a", { report: { state: "reported", status: "done", progressed: false }, group: { name: "pair", standing: "held" } }))).toBe(
-      "idle · reported done · group pair held",
-    )
+  test("a status line names what the session does, its report and its isolation, and no group an earlier release's server part sends", () => {
+    expect(statusLine(row("ses_a", { report: { state: "reported", status: "done", progressed: false } }))).toBe("idle · reported done")
+    expect(statusLine({ ...row("ses_a"), group: { name: "pair", standing: "held" } } as Row)).toBe("idle · owes a report")
     expect(statusLine(row("ses_a", { state: "waiting", isolated: true }))).toBe("waiting on you · owes a report · isolated")
     expect(statusLine(row("ses_a", { state: "waiting", isolated: true, model: "mock/small#high" }))).toBe("waiting on you · owes a report · isolated · mock/small#high")
     expect(statusLine(row("ses_a", { state: "running", native: true }))).toBe("running · owes a report · native")
@@ -549,14 +537,12 @@ const pair = (reported: number): Tree => ({
   rows: [
     row("ses_one", {
       title: "Report back to your parent.",
-      group: { name: "pair", standing: "held" },
       report: { state: "reported", status: "done", progressed: false },
       tool: { name: "courier_send", at: NOW - 3_000 },
     }),
     row("ses_two", {
       title: "CHILD-ASKS",
       state: reported === 2 ? "idle" : "waiting",
-      group: { name: "pair", standing: reported === 2 ? "held" : "out" },
       report: reported === 2 ? { state: "reported", status: "done", progressed: false } : { state: "owed", progressed: false },
       waits: reported === 2 ? [] : [{ type: "permission", action: "shell", resources: ["echo courier-asks"] }],
     }),
@@ -598,9 +584,9 @@ describe("the tree panel", () => {
     await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
     const frame = app.captureCharFrame()
     expect(frame).toContain("courier tree  [█████░░░░░] 1/2 reported")
-    expect(frame).toContain("▸ ✓ Report back to your parent.  idle · reported done · group pair held")
+    expect(frame).toContain("▸ ✓ Report back to your parent.  idle · reported done")
     expect(frame).toContain("ran 2m 00s · last courier_send")
-    expect(frame).toContain("  ● CHILD-ASKS  waiting on you · owes a report · group pair out")
+    expect(frame).toContain("  ● CHILD-ASKS  waiting on you · owes a report")
     expect(frame).toContain("asks permission: shell echo courier-asks")
     expect(fake.calls).toContainEqual(["tree", { sessionID: "ses_parent" }, { location: { directory: "/workspace" } }])
 
@@ -613,15 +599,15 @@ describe("the tree panel", () => {
     await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS - SETTLE_MS))
     await app.waitForFrame((frame) => frame.includes("2/2 reported"))
     expect(fake.calls).toHaveLength(asked + 1)
-    expect(app.captureCharFrame()).toContain("✓ CHILD-ASKS  idle · reported done · group pair held")
+    expect(app.captureCharFrame()).toContain("✓ CHILD-ASKS  idle · reported done")
   })
 
   test("a mixed tree marks the subagent's row native and its standalone sibling's not", async () => {
     const fake = fakeContext(async () => empty)
     fake.state.tree = async () => ({
       rows: [
-        row("ses_reader", { title: "Read the diff", native: true, group: { name: "pair", standing: "out" } }),
-        row("ses_writer", { title: "Write the fix", group: { name: "pair", standing: "out" } }),
+        row("ses_reader", { title: "Read the diff", native: true }),
+        row("ses_writer", { title: "Write the fix" }),
       ],
     })
     await tui.setup(fake.context)
@@ -629,8 +615,8 @@ describe("the tree panel", () => {
 
     await app.waitForFrame((frame) => frame.includes("Write the fix"))
     const frame = app.captureCharFrame()
-    expect(frame).toContain("Read the diff  idle · owes a report · group pair out · native")
-    expect(frame).toMatch(/Write the fix  idle · owes a report · group pair out\s*\n/)
+    expect(frame).toContain("Read the diff  idle · owes a report · native")
+    expect(frame).toMatch(/Write the fix  idle · owes a report\s*\n/)
   })
 
   test("marks OpenCode's subagent's row subagent, under the session that started it; s and x leave it alone (#438)", async () => {
@@ -1238,17 +1224,14 @@ describe("attention", () => {
     item: { type, payload: { text: "", metadata }, delivery: "steer" },
   })
 
-  test("a group's reports arriving notifies; a child's report plays subagent_done; each delivery once", async () => {
+  test("a child's report plays subagent_done, each delivery once; a group's reports from a copy of an earlier release notify nothing", async () => {
     const fake = fakeContext(async () => empty, { location: { directory: "/w" }, sessions: { ses_parent: { title: "Parent" }, ses_one: { title: "One" } } })
     await tui.setup(fake.context)
 
     fake.emit("session.inbox.enqueued", enqueued("msg_1", { source: "courier", from: "ses_one,ses_two", group: "pair", reports: 2 }))
-    fake.emit("session.inbox.enqueued", enqueued("msg_1", { source: "courier", from: "ses_one,ses_two", group: "pair", reports: 2 }))
     fake.emit("session.inbox.enqueued", enqueued("msg_2", { source: "courier", from: "ses_one", status: "done" }))
-    expect(fake.state.notified).toEqual([
-      { title: "Parent", message: "Group pair: 2 reports arrived", notification: { when: "blurred" }, sound: { name: "done", when: "always" } },
-      { title: "Parent", message: "One reported done", notification: false, sound: { name: "subagent_done", when: "always" } },
-    ])
+    fake.emit("session.inbox.enqueued", enqueued("msg_2", { source: "courier", from: "ses_one", status: "done" }))
+    expect(fake.state.notified).toEqual([{ title: "Parent", message: "One reported done", notification: false, sound: { name: "subagent_done", when: "always" } }])
   })
 
   test("nothing for a message without a status, one not the courier's, or another kind of item", async () => {
@@ -1291,16 +1274,7 @@ describe("a tree past maxTotal (#188)", () => {
 })
 
 describe("the footer status entry's width", () => {
-  const crowded = {
-    running: 3,
-    waiting: 1,
-    idle: 2,
-    groups: [
-      { name: "tests", reported: 1, members: 3 },
-      { name: "docs", reported: 0, members: 2 },
-      { name: "api", reported: 2, members: 2 },
-    ],
-  }
+  const crowded = { ...empty, running: 3, waiting: 1, stalled: 2, idle: 2 }
 
   for (const width of [40, 80, 120]) {
     test(`shows whole parts and what waits at ${width} columns`, async () => {
@@ -1310,11 +1284,10 @@ describe("the footer status entry's width", () => {
 
       const frame = await app.waitForFrame((one) => one.includes("waiting on you"))
       const shown = frame.split("\n")[0]!
-      for (const word of shown.matchAll(/group (\S+)( (\S+))?/g)) expect(word[3]).toMatch(/^\d+\/\d+$/)
       expect(shown).not.toMatch(/ [·+]\s{2,}/)
-      if (width === 120) expect(shown).toContain("group tests 1/3 · group docs 0/2 · group api 2/2")
-      else if (width === 80) expect(shown).toMatch(/\+\d groups?/)
+      if (width === 120) expect(shown).toContain("courier 1 waiting on you · 2 stalled · 3 running · 2 idle")
       else expect(shown).toContain("1 waiting on you")
+      expect(shown).not.toContain("group")
     })
   }
 })

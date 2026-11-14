@@ -512,7 +512,7 @@ describe("admit", () => {
     await expect(admit(ports, "ses_root")).rejects.toThrow(totalRefusal(4, 4, 2))
   })
 
-  test("maxTotal: tells a session with none of its own running that only reports held for a group can wake it (#479, #526)", async () => {
+  test("maxTotal: tells a session with none of its own running that no report is still due to it (#479, #526)", async () => {
     const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxTotal: 3 })
     await child("ses_root", "ses_a")
     await child("ses_root", "ses_b")
@@ -520,7 +520,7 @@ describe("admit", () => {
 
     const refused = admit(ports, "ses_b")
     await expect(refused).rejects.toThrow(totalRefusal(3, 3, 0))
-    await expect(refused).rejects.toThrow("only reports already held for a group can still wake you")
+    await expect(refused).rejects.toThrow("no report is still due to you")
     await expect(admit(ports, "ses_a")).rejects.toThrow(totalRefusal(3, 3, 1))
     await expect(admit(ports, "ses_a")).rejects.toThrow("answer any session you started that is blocked, end your turn and try again once one of them has reported, not in a loop.")
   })
@@ -1331,7 +1331,7 @@ describe("the context hook", () => {
 
   test("the maxTotal refusal to a session with none of its own running says to do the part itself", () => {
     const refusal = totalRefusal(4, 4, 0)
-    expect(refusal).toEndWith("Do this part yourself: none of the sessions you started counts, so only reports already held for a group can still wake you.")
+    expect(refusal).toEndWith("Do this part yourself: none of the sessions you started counts, so no report is still due to you.")
     expect(refusal).not.toContain("end your turn")
   })
 

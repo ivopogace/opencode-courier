@@ -1,8 +1,8 @@
 # Tools by role
 
 *   **Author:** Ivo Pogace
-*   **Status:** Proposed
-*   **Date:** 2026-11-14
+*   **Status:** Agreed, not implemented
+*   **Date:** 2026-11-15
 
 --------------------------------------------------------------------------------
 
@@ -73,21 +73,7 @@ document answers the four; the measurement is under "The saving, measured".
 
 ## Open Questions
 
-1.  **Implement the rule, or close the idea?** The rule is small: one statement in
-    `src/tree/context.ts`, no string, no new moment of change. Its saving reaches few sessions
-    on the default settings, since a tree one to four levels deep has no session at the deepest
-    level: it reaches OpenCode subagents inside a tree, and trees run with a low `maxDepth`.
-    Recommendation: implement it. If that population is judged too small to carry any test
-    matrix, close the idea; no cheaper variant exists.
-2.  **Also hide `courier_answer` from every sub-orchestrator?** It would save 2,079 characters per
-    request in the role most children have, and every call a sub-orchestrator makes to it is
-    refused. It brings two costs the rule above does not have, both under Alternative A: a fork
-    of a sub-orchestrator would lose the provider's cached prefix on its first request, and a
-    sub-orchestrator its parent dropped while it still had children would get their permission
-    notices without the tool the notices name. Recommendation: no.
-3.  **Keep `courier_tree` at the deepest level?** Its calls succeed there: it lists the subagents
-    the session started with the host's tool, and any other session's subtree by id. Hiding it
-    saves 738 characters more and removes a call that works. Recommendation: keep it.
+None.
 
 ## Critical User Journeys (CUJs)
 
@@ -173,8 +159,8 @@ Why each offered tool stays:
 *   **`courier_tree`** succeeds for it. It lists the subagents the session started with the host's
     tool, marked `subagent: true`, and with a `sessionID` it lists any session's subtree, since
     the tool checks no relation between caller and target (`tree` in `src/tree/subtree.ts`).
-    Nothing tells a session at the deepest level to call it. Open question 3 is whether that is
-    reason enough to hide it.
+    Nothing tells a session at the deepest level to call it; Alternative C weighs hiding it for
+    that reason.
 
 Why the other roles keep all eight:
 
@@ -239,8 +225,8 @@ What the variants left out would add:
 
 | Variant | Role it changes | Per request | Saving |
 |---|---|---|---|
-| Open question 2: no `courier_answer` below the top | Sub-orchestrator | 9,157 (7 tools) | 2,079, or 19%, about 520 tokens |
-| Open question 3: no `courier_tree` either | Cannot start sessions | 3,490 (3 tools) | 738 more, 58% in all |
+| Alternative A: no `courier_answer` below the top | Sub-orchestrator | 9,157 (7 tools) | 2,079, or 19%, about 520 tokens |
+| Alternative C: no `courier_tree` either | Cannot start sessions | 3,490 (3 tools) | 738 more, 58% in all |
 | Alternative B: three tools hidden until the first spawn | Top, nothing started | 7,137 (5 tools) | 4,099, or 36% |
 
 Two things bound what the numbers are worth:
@@ -302,9 +288,9 @@ tool back the same way would not be refused: `courier_spawn` reads the caller's 
 entry in the tree, and a subagent has none. It would then be a session with a child of its own,
 which this design does not cover.
 
-The last table also answers open question 2 for strings: every string that names
-`courier_answer` goes to a top session or to the tool's caller, so hiding the tool from
-sub-orchestrators would change no string either.
+The last table bears on Alternative A too: every string that names `courier_answer` goes to a
+top session or to the tool's caller, so hiding the tool from sub-orchestrators would change no
+string either.
 
 ### When a session's role changes
 
@@ -370,7 +356,7 @@ transcript can hold calls to a tool its list does not have. That is so today for
 |---|---|---|
 | A session started children and is then at the deepest level, because `maxDepth` was lowered between two starts of the server | It cannot call `courier_stop` or `courier_cleanup` for its children, where today it can | Accepted. A session above it stops them with `courier_stop`, with `cleanup: true` for their worktrees, and the person stops them in the tree panel. The reference says so. |
 | A model at the deepest level calls a hidden tool | The host answers that the tool is not available, and the turn goes on | None needed. Today the same call returns a refusal. |
-| The saving reaches few sessions on default settings | The work buys little | Stated in open question 1. The work is one statement and the changes to four live groups. |
+| The saving reaches few sessions on default settings | The work buys little | Accepted. The work is one statement and the changes to four live groups. |
 | Another plugin or an agent's config removes or restores a courier tool | The lists differ from the tables here | As today: the hook deletes names and adds none. |
 | A later host runs the `context` hook differently, or converts tool schemas per step | The deletion stops working or costs more | The same exposure `courier_spawn` has today. The live suite's `depth` group fails at the pin bump. |
 | Security | None expected: fewer tools offered, no new input, permission or stored key | None needed. |
@@ -393,7 +379,7 @@ transcript can hold calls to a tool its list does not have. That is so today for
     kept roles across instances through the hub, or reading the role from storage on every
     request. It also changes the tool list of every child in every real-model scenario.
 *   **Reason for Rejection**: It needs a new mechanism for under a fifth of the characters the role
-    carries, and adds a moment at which a tool list changes. It is open question 2.
+    carries, and adds a moment at which a tool list changes.
 
 ### Alternative B: Hide `courier_stop`, `courier_cleanup` and `courier_answer` from a top session until its first spawn
 
@@ -411,7 +397,7 @@ transcript can hold calls to a tool its list does not have. That is so today for
 *   **Cons**: The call succeeds there. A session at the deepest level may start subagents with
     the host's tool, and `courier_tree` is the courier's only listing of them.
 *   **Reason for Rejection**: It removes a call that works, for 9% of what the role carries
-    today. It is open question 3.
+    today.
 
 ### Alternative D: Deny the tools in the child's permission rules at spawn
 
@@ -444,11 +430,12 @@ transcript can hold calls to a tool its list does not have. That is so today for
 
 ### Alternative G: Close the idea
 
-*   **Pros**: No work, no matrix.
+*   **Pros**: No work, no matrix. On default settings the saving reaches few sessions: a tree
+    one to four levels deep has no session at the deepest level.
 *   **Cons**: A session that cannot start sessions keeps carrying three tools that can only
     refuse it.
-*   **Reason for Rejection**: The rule costs one statement and no string. It is the fallback of
-    open question 1.
+*   **Reason for Rejection**: The rule costs one statement and no string, and no cheaper
+    variant exists.
 
 --------------------------------------------------------------------------------
 

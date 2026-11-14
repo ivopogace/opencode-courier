@@ -966,7 +966,7 @@ export function addTreePanel(ctx: Context) {
         group: "Courier",
         slash: { name: "courier", arguments: true },
         run: async (input) => {
-          const [verb = "tree"] = (input ?? "").trim().split(/\s+/).filter(Boolean)
+          const verb = (input ?? "").trim().split(/\s+/).find(Boolean) ?? "tree"
           if (verb === "tree") return openPanel()
           ctx.ui.toast.show({ title: "courier", message: USAGE, variant: "warning" })
         },

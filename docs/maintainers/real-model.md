@@ -414,8 +414,9 @@ project's tests itself in the root's checkout (`COURIER_TEST_COMMAND`; the runne
 `tests.txt`, and the totals are read from node's TAP or spec reporter) and makes ten checks: a session for the change in the first turn, which ended with no
 report in it; a review session in a later turn; the review session and anything it started changed
 nothing (no `write`, `edit` or `patch`, no shell command that commits, stages, installs, edits in
-place, redirects into a file, or removes, moves, copies or creates one; a file under `/tmp/` does
-not count, and neither does text inside a quoted script); its report reached the root before the final reply; no polling;
+place, redirects into a file, or removes, moves, copies or creates one; the script given to
+`sh -c` or `bash -c` is read too, a file under `/tmp/` does not count, and a `>` inside a quoted
+string is not a redirect); its report reached the root before the final reply; no polling;
 every session reported with a status; the root ran the tests itself after the review's report; the
 files exist and the first holds the symbol (`COURIER_EXPECT`); the tests pass, `COURIER_TESTS` or
 more; the reply holds `REVIEWED` and that number. Its notes say, per session the root started, which

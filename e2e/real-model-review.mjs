@@ -18,21 +18,107 @@ const RECALL = "courier_recall"
 const SKILL = "courier-orchestrate"
 const CHANGING_TOOLS = new Set(["write", "edit", "patch", "apply_patch", "multiedit"])
 const CHANGING_COMMAND = /\bgit\s+(commit|add|merge|checkout|switch|reset|stash(?!\s+(?:list|show)\b)|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b/
-const REDIRECT = /(?<![\d&<=>-])>>?(?![>&]|\s*&|\s*\/dev\/null|\s*\/tmp\/)/
-const FILE_COMMAND = /(?:^|\s)(rm|mv|cp|mkdir|touch|tee|chmod)\s+(.*)$/
-const inTmp = (path) => path.startsWith("/tmp/")
-function writesOutsideTmp(script) {
-  return script.split(/&&|\|\||[;|\n()]|\bdo\b|\bthen\b/).some((part) => {
-    const found = FILE_COMMAND.exec(part.replace(/\d*>.*$/, ""))
-    if (!found) return false
-    const paths = found[2].split(/\s+/).filter((word) => word && !word.startsWith("-"))
-    const targets = found[1] === "cp" ? paths.slice(-1) : found[1] === "chmod" ? paths.slice(1) : paths
-    return targets.length === 0 || !targets.every(inTmp)
-  })
+const FILE_COMMANDS = new Set(["rm", "mv", "cp", "mkdir", "touch", "tee", "chmod"])
+const SHELLS = new Set(["sh", "bash", "zsh", "dash"])
+const inTmp = (path) => path.startsWith("/tmp/") && !path.includes("/../")
+function commandsOf(script) {
+  const commands = []
+  const heredocs = []
+  let current = { words: [], targets: [], quoted: [] }
+  let word
+  let target = false
+  const endWord = () => {
+    if (word === undefined) return
+    if (target === "count") current.targets.push(word)
+    else if (!target) current.words.push(word)
+    word = undefined
+    target = false
+  }
+  const endCommand = () => {
+    endWord()
+    target = false
+    if (current.words.length || current.targets.length || current.quoted.length) commands.push(current)
+    current = { words: [], targets: [], quoted: [] }
+  }
+  for (let i = 0; i < script.length; i++) {
+    const char = script[i]
+    if (char === "\\") {
+      if (script[i + 1] !== "\n") word = (word ?? "") + (script[i + 1] ?? "")
+      i++
+    } else if (char === "'") {
+      const end = script.indexOf("'", i + 1)
+      const stop = end === -1 ? script.length : end
+      word = (word ?? "") + script.slice(i + 1, stop)
+      i = stop
+    } else if (char === '"') {
+      let text = ""
+      for (i++; i < script.length && script[i] !== '"'; i++) {
+        if (script[i] === "\\") i++
+        text += script[i] ?? ""
+      }
+      current.quoted.push(text)
+      word = (word ?? "") + text
+    } else if (char === "#" && word === undefined) {
+      while (i + 1 < script.length && script[i + 1] !== "\n") i++
+    } else if (char === "\n") {
+      endCommand()
+      for (const tag of heredocs.splice(0)) {
+        let line
+        do {
+          const end = script.indexOf("\n", i + 1)
+          const stop = end === -1 ? script.length : end
+          line = script.slice(i + 1, stop)
+          i = stop
+        } while (i < script.length && line.trim() !== tag)
+      }
+    } else if (char === "<" && script[i + 1] === "<" && script[i + 2] !== "<") {
+      endWord()
+      i += script[i + 2] === "-" ? 3 : 2
+      while (script[i] === " ") i++
+      let tag = ""
+      for (; i < script.length && !/[\s;&|<>()]/.test(script[i]); i++) if (!"'\"\\".includes(script[i])) tag += script[i]
+      i--
+      heredocs.push(tag)
+    } else if (char === "<") {
+      endWord()
+      target = "skip"
+    } else if (char === ">") {
+      const before = script[i - 1] ?? ""
+      if (before === "=" || before === "-") {
+        word = (word ?? "") + char
+        continue
+      }
+      if (/^\d+$/.test(word ?? "")) word = undefined
+      endWord()
+      if (script[i + 1] === ">") i++
+      if (script[i + 1] === "|") i++
+      if (script[i + 1] === "&") {
+        i++
+        while (/[\d-]/.test(script[i + 1] ?? "")) i++
+      } else target = /[\d&<]/.test(before) ? "skip" : "count"
+    } else if (";|&()`".includes(char)) endCommand()
+    else if (/\s/.test(char)) endWord()
+    else word = (word ?? "") + char
+  }
+  endCommand()
+  return commands
 }
 function changingShell(command) {
-  const unquoted = command.replace(/\x27[^\x27]*\x27/g, "Q")
-  return CHANGING_COMMAND.test(command) || REDIRECT.test(unquoted.replace(/"(?:\\.|[^"\\])*"/g, "Q")) || writesOutsideTmp(unquoted.replaceAll('"', ""))
+  if (CHANGING_COMMAND.test(command)) return true
+  return commandsOf(command).some(({ words, targets, quoted }) => {
+    if (targets.some((path) => !inTmp(path) && !path.startsWith("/dev/"))) return true
+    if (quoted.some((text) => [...text.matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)].some((found) => changingShell(found[1] ?? found[2])))) return true
+    const shell = words.findIndex((one) => SHELLS.has(one))
+    const flag = shell === -1 ? -1 : words.findIndex((one, index) => index > shell && /^-[a-z]*c$/.test(one))
+    if (flag !== -1 && changingShell(words[flag + 1] ?? "")) return true
+    const at = words.findIndex((one) => FILE_COMMANDS.has(one))
+    if (at === -1) return false
+    const rest = words.slice(at + 1)
+    const paths = rest.filter((one) => !one.startsWith("-"))
+    const byLast = words[at] === "cp" && !rest.some((one) => one === "-t" || one.startsWith("--target-directory"))
+    const written = words[at] === "chmod" ? paths.slice(1) : byLast ? paths.slice(-1) : paths
+    return written.length === 0 || !written.every(inTmp)
+  })
 }
 const TEST_SHELL = /\b(npm|pnpm|yarn|bun)(\s+run)?\s+test\b|\bnode\s+--test\b/
 const loadsAnySkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed"

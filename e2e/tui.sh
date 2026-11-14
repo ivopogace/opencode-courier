@@ -308,17 +308,32 @@ check "the panel sits beside the session, not over it" \
   "$(awk '/courier tree/ { if (index($0, "courier tree") > 40) found = 1 } END { print found ? "true" : "false" }' "$WORK/tui-widened.txt")"
 open_tui tui "$parent"
 check "the TUI is back on the parent" "$(shows "courier 2 idle" 60 tui-parent-again)"
-echo "/courier stop stops a child after a confirm, through courier_stop's path"
+echo "/courier stop is no verb: it shows the usage and stops nothing"
+submit "/courier stop $asking"
+check "/courier stop shows the usage in a toast, and no confirm" \
+  "$([ "$(shows "/courier tree opens the session tree" 30 tui-stop-usage)" = true ] && ! grep -qF "Stop \"CHILD-ASKS\"" "$WORK/tui-stop-usage.txt" && echo true || echo false)"
+check "and the child is not noted stopped" "$([ -z "$(kv get "report/$asking/stopped")" ] && echo true || echo false)"
+echo "s in the tree panel stops a child after a confirm, through courier_stop's path"
 refused=$(rpc stop "{\"sessionID\":\"$asking\",\"by\":\"$asking\"}")
 echo "  $refused"
 check "the RPC refuses a stop from a session not above the target" "$(jq -r '.type == "refused"' <<<"$refused")"
-submit "/courier stop $asking"
+submit "/courier tree"
+check "the panel opens" "$(shows "courier tree" 30 tui-stop-panel)"
+for _ in 1 2 3; do
+  tmux send-keys -t "$TMUX_SESSION" Down
+  sleep 0.5
+  tmux capture-pane -pt "$TMUX_SESSION" 2>/dev/null | grep -qE '▸ (├|└) .+CHILD-ASKS' && break
+done
+check "down selects the child" "$(tmux capture-pane -pt "$TMUX_SESSION" >"$WORK/tui-stop-selected.txt" 2>/dev/null; grep -qE '▸ (├|└) .+CHILD-ASKS' "$WORK/tui-stop-selected.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" s
 check "a confirm names the child" "$(shows "Stop \"CHILD-ASKS\"" 30 tui-stop-confirm)"
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "once confirmed, a toast says what was stopped" "$(shows "Stopped 1 session: 0 interrupted" 30 tui-stopped)"
 check "and the child is noted stopped, as courier_stop notes it" "$([ -n "$(kv get "report/$asking/stopped")" ] && echo true || echo false)"
 stopped_row=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -r --arg id "$asking" '.output.rows[] | select(.sessionID == $id) | .stopped')
 check "and the panel's tree reads the child as stopped" "$([ "$stopped_row" = true ] && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes the panel" "$(hides "courier tree" 10 tui-stop-closed)"
 open_tui tui-home
 check "the entry is not on the home screen of a TUI with no session" \
   "$([ "$(shows "ctrl+p" 60 tui-home)" = true ] && ! grep -qF "courier " "$WORK/tui-home.txt" && echo true || echo false)"

@@ -317,8 +317,9 @@ echo "s in the tree panel stops a child after a confirm, through courier_stop's 
 refused=$(rpc stop "{\"sessionID\":\"$asking\",\"by\":\"$asking\"}")
 echo "  $refused"
 check "the RPC refuses a stop from a session not above the target" "$(jq -r '.type == "refused"' <<<"$refused")"
+check "the usage toast is gone" "$(hides "/courier tree opens the session tree" 30 tui-stop-usage-gone)"
 submit "/courier tree"
-check "the panel opens" "$(shows "courier tree" 30 tui-stop-panel)"
+check "the panel opens" "$(shows "courier tree  [" 30 tui-stop-panel)"
 for _ in 1 2 3; do
   tmux send-keys -t "$TMUX_SESSION" Down
   sleep 0.5

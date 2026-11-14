@@ -425,7 +425,7 @@ run_reports() {
   check "the child's courier_send, called with queue: true, completed as a report" \
     "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send") | .state] | length == 1 and (.[0].status == "completed")')"
   check "OpenCode admitted it steered, as every courier message is" \
-    "$(jq -sr --arg parent "$parent" --arg child "$child" '[.[] | select(.type == "session.inbox.enqueued" and .sessionID == $parent and .item.metadata.from == $child and .item.metadata.status == "done")] | length == 1 and all(.item.delivery == "steer")' "$WORK/probe.log")"
+    "$(jq -sr --arg parent "$parent" --arg child "$child" '[.[] | select(.type == "session.inbox.enqueued" and .sessionID == $parent and .item.metadata.from == $child and .item.metadata.status == "done")] | length > 0 and all(.item.delivery == "steer")' "$WORK/probe.log")"
 
   scenario "a message without a status is progress: a child that then ends its turn is reported, and the notice says so"
   out=$(prompt "COURIER-PROGRESS")

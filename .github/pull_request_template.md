@@ -21,7 +21,7 @@ say so. A large, clearly AI-generated description may get the PR closed.
 
 ### Screenshots / recordings
 
-_For a change to the terminal part (tree panel, asks inbox, memory view)._
+_For a change to the terminal part (tree panel, asks inbox)._
 
 ### Checklist
 

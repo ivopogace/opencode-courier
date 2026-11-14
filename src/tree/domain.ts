@@ -34,6 +34,17 @@ export function readNativeChildren(options: unknown) {
 
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
+const REMOVED_OPTIONS: Readonly<Record<string, string>> = {
+  memory: "memory was removed in 0.17.0. Remove it from the config.",
+}
+
+export function readRemovedOptions(options: unknown) {
+  const given = obj(options)
+  return Object.entries(REMOVED_OPTIONS)
+    .filter(([name]) => Object.hasOwn(given, name))
+    .map(([name, why]) => `the ${name} option is not read: ${why}`)
+}
+
 export type BusyTimes = Pick<Times, "updated" | "idle" | "busy">
 
 export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.busy ?? time.updated) > millis(time.idle)

@@ -43,7 +43,6 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
 | `COURIER_NATIVE` | | `1` turns `nativeChildren` on, so every child is native unless the spawn says `native: false`. |
-| `COURIER_SEED` | | A JSON file of storage keys to set before the prompt ([seeding a record](#seeding-a-record)). |
 | `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, then for the children. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
 
@@ -168,8 +167,7 @@ and when, who used a group, a check-in or had a spawn refused.
 
 `e2e/real-model-prompt-open.txt` leaves the split to the root. With it, the "two or more children"
 checks fail by design when the root keeps a part, so read the split from the transcripts. The
-scripted prompt fixes the split, so it cannot show what `courier_recall` is worth; the open prompt
-with a seeded record can.
+scripted prompt fixes the split; the open prompt shows how the root makes one.
 
 | Condition | Result |
 |---|---|
@@ -456,16 +454,7 @@ more; the reply holds `REVIEWED` and that number. Its notes say, per session the
 stage it was, its agent, isolation and group; what the change made and committed; what the review
 read and ran and what it reported; what the root did after the review, itself or through sessions.
 
-## Seeding a record
-
-`COURIER_SEED` names a JSON file of storage keys, `{ "<key>": <value> }`, set with `e2e/kv.ts`
-before the parent's prompt. `<project>` in a key or value stands for the project's id. The log shows
-`seeded memory/<id>/…` before `parent prompt:`. Three seeds are checked in:
-`e2e/real-model-seed.json`, an earlier tree's record; `e2e/real-model-seed-lesson.json`, the
-same with the lesson "the count part is small; do it yourself"; and
-`e2e/real-model-seed-lesson-halves.json`, the same with "halves of a list are too small to spawn;
-do them yourself", a lesson only the "numbers" session of the recursive scenario can act on, which
-reaches it through the `lessons` entry alone, as a spawned session calls no `courier_recall`.
+## Comparing conditions
 
 A run is **finished** when it exits 0 or 1 and has a `summary.json`. Repeat a run that exits 2, or
 whose first turn did not end, under a new name. To compare conditions, keep one model and run each
@@ -477,8 +466,8 @@ run() {  # run <name> [VAR=value ...]: work directory and log under ~/courier-ru
   env COURIER_SCENARIO=recursive E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
   echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
 }
-run mem-seeded-1 COURIER_SEED=$PWD/e2e/real-model-seed.json
-run open-lesson-1 COURIER_PROMPT="$(cat e2e/real-model-prompt-open.txt)" COURIER_SEED=$PWD/e2e/real-model-seed-lesson.json
+run base-1
+run open-1 COURIER_PROMPT="$(cat e2e/real-model-prompt-open.txt)"
 ```
 
 ### Reading many runs
@@ -486,7 +475,7 @@ run open-lesson-1 COURIER_PROMPT="$(cat e2e/real-model-prompt-open.txt)" COURIER
 `script/real-model-table.ts` prints one Markdown table per condition, a row per run directory:
 
 ```bash
-bun script/real-model-table.ts baseline=$HOME/courier-runs/base-1 seeded=$HOME/courier-runs/mem-seeded-1
+bun script/real-model-table.ts baseline=$HOME/courier-runs/base-1 open=$HOME/courier-runs/open-1
 bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory is its own condition
 ```
 

@@ -110,7 +110,6 @@ Set the server options on the plugin's entry in the **global** config,
 | `maxDepth` | `5` | How deep a tree goes. Your session is depth 0. A session at `maxDepth` cannot start sessions. |
 | `maxChildren` | `5` | Live children one session may have. |
 | `maxTotal` | `30` | Live spawned sessions in one tree. |
-| `memory` | `true` | Keep a record of each session tree for later orchestrators ([memory](docs/reference.md#memory)). |
 | `nativeChildren` | `false` | The default for a spawn that does not set `native`: `true` creates non-isolated children as OpenCode subagents, for OpenCode's own view of them, at an extra parent turn per child turn ([native children](docs/reference.md#native-child-sessions)). |
 
 The terminal part reads its options only from `~/.config/opencode/cli.json`, in the same entry
@@ -127,7 +126,6 @@ form. Its one option, `"animations": false`, keeps the tree panel still.
 | `courier_cleanup` | Removes an isolated child's worktree and forgets the child. |
 | `courier_answer` | Proposes an answer to a child's permission request, or passes on your answer to its question. |
 | `courier_later` / `courier_cancel` | Schedules a message for a session, or drops one. |
-| `courier_recall` / `courier_note` | Reads what earlier trees in this project did, or writes this tree's one-line lesson. |
 
 Parameters and behaviour: [the reference](docs/reference.md#the-tools).
 
@@ -137,7 +135,6 @@ Parameters and behaviour: [the reference](docs/reference.md#the-tools).
 - **`/courier tree`:** a panel with the tree, the session it was opened in as its first row. `enter` opens a session, `s` stops it, `q` closes.
 - **`/courier stop <session>`:** stops a session and everything under it.
 - **`ctrl+x k`** or **`/asks`:** every ask waiting on you in the tree, answered in a dialog.
-- **`/courier memory`:** the project's tree records. `p` pins one, `x` forgets one.
 
 More: [in the terminal](docs/reference.md#in-the-terminal).
 

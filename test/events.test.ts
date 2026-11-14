@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { memoryEvents } from "../src/memory/events.js"
-import type { MemoryState } from "../src/memory/ports.js"
 import { personEvents } from "../src/person/events.js"
 import { follow, typesOf, watchFromHub, type EventModule, type EventPorts, type EventType, type HostEvent } from "../src/platform/events.js"
 import type { Hub, Member } from "../src/platform/hub.js"
@@ -224,7 +222,7 @@ describe("the event types a subscription asks for", () => {
     const { ports: watchPorts, options } = fakePorts([[]])
     ;(watchPorts as any).log = () => stopping.abort()
     const state = fresh()
-    const modules = [treeEvents(state, waitsOn()), personEvents(state as never), memoryEvents({} as MemoryState)]
+    const modules = [treeEvents(state, waitsOn()), personEvents(state as never)]
 
     await follow(watchPorts, modules as EventModule<typeof watchPorts>[], stopping.signal, 1)
 

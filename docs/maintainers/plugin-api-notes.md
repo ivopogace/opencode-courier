@@ -469,7 +469,7 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   changed one) or "The context under "<key>" no longer applies. Disregard it." (a removal);
   `message-updater.ts` stores it as a `system` message (`description`
   `Instructions updated: api/<key>`, the keys as stored, every key changed since the last step in
-  one message, sorted: `api/lessons, api/role, api/standing` at a root's first spawn, as
+  one message, sorted: `api/role, api/standing` at a root's first spawn, as
   `e2e/run.sh` checks; in a turn a courier message starts, the message comes before that message),
   which goes to the model at its place in the transcript, after the tool result that put the entry,
   as a **user** message: `<system-update>`, the text with `&`, `<` and `>` escaped,
@@ -499,8 +499,7 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   the courier's `courier.parentID` of a spawned child included; its `parentID` is empty. The courier
   registers the hook after its others (`tree/fork.ts`, a refusal logged): it removes the fork's
   `role` and `standing` entries and admits its own `resume: false` notice after the host's
-  ([forking a session in a tree](../reference.md#roster)). The `lessons` entry stays: it is the
-  project's, not the tree's.
+  ([forking a session in a tree](../reference.md#roster)).
 - **What a fork's first request looks like** (`projectFork` in `session/projector.ts`,
   `instruction-state.ts`, `history.ts`). The fork's baseline is seeded from the original's *current*
   entry values (`InstructionState.current`), not from the original's baseline, and the copied
@@ -514,7 +513,7 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   The stale block stays in the fork's baseline until a compaction, so `context.ts` finds a role line
   there and pushes no part, and the request's system prompt and copied messages stay the original's.
   What does differ is the tool list of a fork of a leaf: with no roster entry it is a top session,
-  and `courier_spawn`, `courier_recall` and `courier_note` are not hidden from it.
+  and `courier_spawn` is not hidden from it.
 - **Reading it.** `put`, `list` and `remove` need the session to exist (`Session.NotFoundError`) but
   boot no location. The request hooks' `messages` carry each stored message's `metadata`, for
   reading only (`SessionRequestMessage`); the `context` hook does not use it. The `context` hook reads nothing of the value: the text itself only shows in
@@ -671,9 +670,7 @@ is not. What the plugin does about it: [architecture.md](architecture.md#two-ser
   means a new `select` with an empty search. `current` matches by deep equality
   (`ui/dialog-select.tsx`).
 - **A select's rows** are one line: title (cut at 61), description, and a right-aligned footer that
-  squeezes them. `large` is 88 columns, `xlarge` 116. Rows also take an undeclared `details: string[]`
-  of muted lines, which the memory view uses for lessons; a later host may drop it. A `disabled`
-  option is left out.
+  squeezes them. `large` is 88 columns, `xlarge` 116. A `disabled` option is left out.
 - **The panel belongs to one session.** `ui.panel.open` targets the route's session, and the app
   closes it when the route leaves that session (`app.tsx`). A new panel takes the keyboard. So the
   tree panel reopens itself after a route change, and hands the keyboard back with

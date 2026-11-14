@@ -3,8 +3,8 @@ import { isGroupName, modelName } from "./domain.js"
 import { joinGroup, leaveGroup } from "./group.js"
 import { admit } from "./limits.js"
 import { chooseModel } from "./model.js"
-import type { CourierPorts, Entry, RosterEntry } from "./ports.js"
-import { putEntries, syncStanding } from "./standing.js"
+import type { CourierPorts, RosterEntry } from "./ports.js"
+import { syncStanding } from "./standing.js"
 import { childStore, groupStore } from "./store.js"
 import { childBrief, childBranch, nativeIsolateRefusal, ROLE_KEY, rolePart } from "./text.js"
 
@@ -183,13 +183,10 @@ function nameBoth(ports: CourierPorts, child: RosterEntry, depth: number) {
 
 async function nameEach(ports: CourierPorts, child: RosterEntry, depth: number) {
   const { parentID } = child
-  const extra = await extraEntries(ports)
   await nameRole(ports, child.sessionID, depth, ports.nativeChildren === true)
-  if (depth < ports.limits.maxDepth) await putEntries(ports, child.sessionID, extra)
   const rootNamed = ports.roles.get(parentID)?.entry === true
   const fresh = depth === 1 && !rootNamed
   const renamed = fresh || child.native ? await nameRole(ports, parentID, depth - 1, await hostReportsReach(ports, child)) : false
-  if (fresh && renamed) await putEntries(ports, parentID, extra)
   if (renamed || (depth === 1 && rootNamed)) ports.roles.set(parentID, { depth: depth - 1, entry: true })
   else ports.roles.delete(parentID)
 }
@@ -198,16 +195,6 @@ async function hostReportsReach(ports: CourierPorts, child: RosterEntry) {
   if (ports.nativeChildren === true || child.native) return true
   const started = await childStore(ports.storage).children(child.parentID).catch(() => [])
   return started.some((entry) => entry.native)
-}
-
-async function extraEntries(ports: CourierPorts): Promise<ReadonlyArray<Entry>> {
-  if (!ports.entries || !ports.session.instructions) return []
-  try {
-    return await ports.entries()
-  } catch (error) {
-    ports.log(`courier_spawn: the entries of the other modules could not be read, so the session starts without them: ${String(error)}`)
-    return []
-  }
 }
 
 async function nameRole(ports: CourierPorts, sessionID: string, depth: number, hostReports: boolean) {

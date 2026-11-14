@@ -29,11 +29,6 @@ export default {
             description: "Start a session.",
             input: { type: "object", properties: { task: { type: "string" } }, required: ["task"] },
           }
-        if (!event.tools.courier_note)
-          event.tools.courier_note = {
-            description: "Note a lesson.",
-            input: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
-          }
       }
     })
     const following = new AbortController()

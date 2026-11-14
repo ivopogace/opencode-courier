@@ -4,7 +4,7 @@ import { send } from "../src/tree/send.js"
 import { spawn } from "../src/tree/spawn.js"
 import { admit, liveBelow } from "../src/tree/limits.js"
 import { shapeContext } from "../src/tree/context.js"
-import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, readNativeChildren, turnEnd, type RosterEntry } from "../src/tree/domain.js"
+import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, readNativeChildren, readRemovedOptions, turnEnd, type RosterEntry } from "../src/tree/domain.js"
 import { runs, turnOf } from "../src/tree/running.js"
 import type { ContextPorts, CourierPorts, LimitPorts, Role, SpawnGate } from "../src/tree/ports.js"
 import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
@@ -79,6 +79,19 @@ async function chainTo(child: (parentID: string, sessionID: string) => Promise<v
   }
   return parent
 }
+
+describe("readRemovedOptions", () => {
+  test("has one problem for a memory option present in the options, whatever its value", () => {
+    const problem = "the memory option is not read: memory was removed in 0.17.0. Remove it from the config."
+    for (const memory of [true, false, null, "on", 0, {}]) expect(readRemovedOptions({ memory, maxDepth: 2 })).toEqual([problem])
+  })
+
+  test("has none when no removed option is present", () => {
+    expect(readRemovedOptions(undefined)).toEqual([])
+    expect(readRemovedOptions({ maxDepth: 2, nativeChildren: true })).toEqual([])
+    expect(readRemovedOptions("memory")).toEqual([])
+  })
+})
 
 describe("readLimits", () => {
   test("defaults to maxDepth 5, maxChildren 5 and maxTotal 30", () => {
@@ -1074,54 +1087,27 @@ describe("spawn", () => {
     expect(roles.has("ses_root")).toBe(false)
   })
 
-  test("writes the entries the other modules supply after the role, to a child below maxDepth and to the root at its first spawn", async () => {
+  test("writes the role and the standing and no other entry, to a child below maxDepth and to the root at its first spawn", async () => {
     const limits = { ...DEFAULT_LIMITS, maxDepth: 2 }
     const entries = new Map<string, Map<string, unknown>>()
-    const { courier, calls, child } = spawnPorts(limits, entries)
-    let lessons = "opencode-courier lessons: one"
-    ;(courier as any).entries = async () => [{ key: "lessons", value: lessons }]
+    const { courier, calls } = spawnPorts(limits, entries)
 
     await spawn(courier, "ses_root", { task: "t" })
 
     expect(calls).toEqual([
       "session.create",
       `put ses_new1 ${ROLE_KEY}: ${rolePart(1, limits)}`,
-      "put ses_new1 lessons: opencode-courier lessons: one",
       `put ses_root ${ROLE_KEY}: ${rolePart(0, limits)}`,
-      "put ses_root lessons: opencode-courier lessons: one",
       childBrief("ses_root", "t", 1, limits),
       ...standingCalls("ses_root", ["ses_new1", "t"]),
     ])
-    calls.length = 0
-    lessons = "opencode-courier lessons: two"
-    await spawn(courier, "ses_root", { task: "u" })
-    expect(calls.filter((call) => call.includes("lessons"))).toEqual(["put ses_new2 lessons: opencode-courier lessons: two"])
-    calls.length = 0
-    await child("ses_root", "ses_a")
-    await spawn(courier, "ses_a", { task: "v" })
-    expect(calls.filter((call) => call.includes("lessons"))).toEqual([])
-    expect(calls[1]).toBe(`put ses_new3 ${ROLE_KEY}: ${rolePart(2, limits)}`)
+    expect([...entries.values()].flatMap((held) => [...held.keys()]).toSorted()).toEqual([ROLE_KEY, ROLE_KEY, STANDING_KEY].toSorted())
   })
 
-  test("a supplier that fails leaves the session with its role alone, logged; without keyed instructions it is not asked", async () => {
-    const entries = new Map<string, Map<string, unknown>>()
-    const { courier, calls, logged } = spawnPorts(DEFAULT_LIMITS, entries)
-    ;(courier as any).entries = async () => Promise.reject(new Error("db locked"))
-
+  test("without keyed instructions a spawn writes no entry", async () => {
+    const { courier, calls } = spawnPorts()
     await spawn(courier, "ses_root", { task: "t" })
-
-    expect(calls.filter((call) => call.startsWith("put"))).toEqual([
-      `put ses_new1 ${ROLE_KEY}: ${rolePart(1, DEFAULT_LIMITS)}`,
-      `put ses_root ${ROLE_KEY}: ${rolePart(0, DEFAULT_LIMITS)}`,
-      standingCalls("ses_root", ["ses_new1", "t"])[1]!,
-    ])
-    expect(logged).toEqual(["courier_spawn: the entries of the other modules could not be read, so the session starts without them: Error: db locked"])
-    const asked: number[] = []
-    const { courier: older, calls: olderCalls } = spawnPorts()
-    ;(older as any).entries = async () => (asked.push(1), [{ key: "lessons", value: "x" }])
-    await spawn(older, "ses_root", { task: "t" })
-    expect(asked).toEqual([])
-    expect(olderCalls).toEqual(["session.create", childBrief("ses_root", "t", 1, DEFAULT_LIMITS)])
+    expect(calls).toEqual(["session.create", childBrief("ses_root", "t", 1, DEFAULT_LIMITS)])
   })
 
   test("the standing is not put again when the entry already holds it", async () => {
@@ -1295,9 +1281,9 @@ describe("the context hook", () => {
     const { ports, child } = contextPorts({ ...DEFAULT_LIMITS, maxDepth: 2 }, entries)
     ports.roles.set("ses_d2", { depth: 2, entry: true })
     await chainTo(child, 2)
-    const event = { sessionID: "ses_d2", tools: { ...tools(), courier_recall: {}, courier_note: {} }, system: [{ type: "text" as const, text: baseline(2) }] }
+    const event = { sessionID: "ses_d2", tools: tools(), system: [{ type: "text" as const, text: baseline(2) }] }
 
-    await shapeContext({ ...ports, hiddenFromLeaf: ["courier_recall", "courier_note"] }, event)
+    await shapeContext(ports, event)
 
     expect(Object.keys(event.tools)).toEqual(["courier_send", "read"])
     expect(event.system).toEqual([{ type: "text", text: baseline(2) }])
@@ -1443,15 +1429,13 @@ describe("the context hook", () => {
     }
   })
 
-  const leafTools = () => ({ ...tools(), courier_recall: {}, courier_note: {} })
-
-  test("gives an OpenCode subagent of a tree's session no role part and, as a leaf, no courier_spawn, courier_recall or courier_note", async () => {
+  test("gives an OpenCode subagent of a tree's session no role part and, as a leaf, no courier_spawn", async () => {
     const { ports, child, parents } = contextPorts()
     await chainTo(child, 1)
     parents.set("ses_sub", "ses_d1")
-    const event = { sessionID: "ses_sub", tools: leafTools() as Record<string, unknown>, system: [{ type: "text" as const, text: "base" }] }
+    const event = { sessionID: "ses_sub", tools: tools() as Record<string, unknown>, system: [{ type: "text" as const, text: "base" }] }
 
-    await shapeContext({ ...ports, hiddenFromLeaf: ["courier_recall", "courier_note"] }, event)
+    await shapeContext(ports, event)
 
     expect(Object.keys(event.tools)).toEqual(["courier_send", "read"])
     expect(event.system).toEqual([{ type: "text", text: "base" }])

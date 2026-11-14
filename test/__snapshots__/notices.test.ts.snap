@@ -1,6 +1,6 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`tools are the eleven courier tools, each a direct tool 1`] = `
+exports[`tools are the nine courier tools, each a direct tool 1`] = `
 [
   [
     "courier_spawn",
@@ -52,18 +52,6 @@ exports[`tools are the eleven courier tools, each a direct tool 1`] = `
   ],
   [
     "courier_cancel",
-    {
-      "codemode": false,
-    },
-  ],
-  [
-    "courier_recall",
-    {
-      "codemode": false,
-    },
-  ],
-  [
-    "courier_note",
     {
       "codemode": false,
     },
@@ -578,48 +566,6 @@ exports[`tools courier_cancel 1`] = `
 }
 `;
 
-exports[`tools courier_recall 1`] = `
-{
-  "description": "Look once at what earlier session trees in this project did, at the root, before you decide whether and how to split a task; a session another session started reads none, since the root weighed the records before it split. The listing: one line per tree, those the person pinned first and then newest first, with how its top split the task, how each part went (its status, how long it ran, what it cost, how full its context got) and whether a spawn was refused; with sessionID, one tree's record in full. Records hold no report bodies or files. Call it once at the start, not in a loop, and not to check on sessions you started: their reports wake you.",
-  "input": {
-    "additionalProperties": false,
-    "properties": {
-      "sessionID": {
-        "anyOf": [
-          {
-            "description": "The top session of a listed record, for that record in full; without it, one line per record of this project.",
-            "type": "string",
-          },
-          {
-            "type": "null",
-          },
-        ],
-      },
-    },
-    "type": "object",
-  },
-}
-`;
-
-exports[`tools courier_note 1`] = `
-{
-  "description": "Write the one lesson of your session tree for the next orchestrator in this project, once you have verified and integrated the work: what it should know about running a tree like this one that the record's facts do not say. How it was split (which parts collided, what was too small to hand off), how it was verified (what a part got wrong and what caught it), how the parts were briefed, or what the person decided. Name the job it comes from and the reason, so that a lesson for one kind of job can be told from one that holds everywhere. One line, at most 300 characters; a longer one is refused, not clipped, so write it again shorter. Kept on your own tree's record and listed by courier_recall after its facts, dated; a second call replaces the first. From the top session only: a session below it puts what it learned in its report. No code, no secrets, and not a rule that holds every time: that belongs in AGENTS.md or the skill, for the person to put there, so tell them instead.",
-  "input": {
-    "additionalProperties": false,
-    "properties": {
-      "text": {
-        "description": "The lesson, one line of at most 300 characters (longer is refused, not clipped): what the next orchestrator in this project should know about running a tree like this one, how it was split, verified or briefed, or what the person decided, with the job it comes from and the reason.",
-        "type": "string",
-      },
-    },
-    "required": [
-      "text",
-    ],
-    "type": "object",
-  },
-}
-`;
-
 exports[`envelope and child brief END_TURN 1`] = `"If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`envelope and child brief childBrief 1`] = `
@@ -739,7 +685,7 @@ exports[`envelope and child brief rolePart 3`] = `"opencode-courier role: sub-or
 
 exports[`envelope and child brief rolePart 4`] = `"opencode-courier role: leaf, at depth 3, the deepest the session tree goes. You cannot start sessions: do your task yourself and report with courier_send to the session that started you."`;
 
-exports[`envelope and child brief rolePart 5`] = `"opencode-courier role: root, no sessions started yet. Before a task with 2 or more independent, substantial parts touching separate files or areas, load the courier-orchestrate skill, call courier_recall once for how earlier trees in this project were split and how they went, and decide whether to split it across sessions (doing it yourself is fine; so is handing a heavy task, with long reading, many edits or long runs, whole to one session to keep your context, but never a small one), and say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part) or \`split: 1 part: <the task>, to keep my context\`."`;
+exports[`envelope and child brief rolePart 5`] = `"opencode-courier role: root, no sessions started yet. Before a task with 2 or more independent, substantial parts touching separate files or areas, load the courier-orchestrate skill and decide whether to split it across sessions (doing it yourself is fine; so is handing a heavy task, with long reading, many edits or long runs, whole to one session to keep your context, but never a small one), and say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part) or \`split: 1 part: <the task>, to keep my context\`."`;
 
 exports[`envelope and child brief rolePart of a session OpenCode's own message at a native child's turn end can reach 1`] = `"OpenCode's own message at a turn end: when a turn of a session you started with courier_spawn as your OpenCode subagent ends, OpenCode itself sends you <subagent sessionID="…" state="…"> with that session's last text. It is the host's note that the turn ended, not the session's report. What counts is the report the session sends you with courier_send, or the courier's notice that it ended without one, each in a <courier> message. The <subagent> message needs no reply and nothing done: when a turn brings you nothing else, end it in one line. For sessions in a group, wait for the group's reports, which come together in one message. This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <subagent> message of a subagent you started with OpenCode's subagent tool is that subagent's result."`;
 
@@ -793,7 +739,7 @@ Merge each isolated part's reported branch into your own checkout (git merge cou
 
 ## 6. Done
 
-The task is done only when every part is verified and integrated. At the root, before you reply to the person: one courier_note if the next tree in this project should know something about running one like this; none when there is nothing."
+The task is done only when every part is verified and integrated."
 `;
 
 exports[`envelope and child brief refusals 1`] = `"Not started: this session is at depth 3 of its session tree, and the tree goes at most 3 deep (maxDepth), so it cannot start sessions. Do the task yourself, and report with courier_send."`;
@@ -1621,217 +1567,6 @@ exports[`clipping clipWords 3`] = `"abc… [7 more characters]"`;
 
 exports[`clipping clipWords 4`] = `"a bcde… [5 more characters]"`;
 
-exports[`memory RECALL_OFF 1`] = `"Memory is off: the plugin's memory option is false, so no record of a session tree is kept or listed in this project. Decide from the task alone."`;
-
-exports[`memory recallListText 1`] = `
-"1 earlier tree recorded in this project, newest first; weigh how they were split and how their parts went before you decide. A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out. The facts are as they stood when the tree last moved: "not finished" with an old "last moved" is a stale record, not a tree running now. courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use.
-- ses_now (this tree) 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · no parts · ran 42 min · last moved 3 min ago · not finished · recalled
-- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished"
-`;
-
-exports[`memory recallListText 2`] = `
-"No earlier tree is recorded in this project: a tree's record is written by a courier_recall call and as each turn in it ends, and kept 90 days. Decide from the task alone.
-- ses_now (this tree) 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · no parts · ran 42 min · last moved 3 min ago · not finished · recalled"
-`;
-
-exports[`memory recallListText 3`] = `
-"1 earlier tree recorded in this project, newest first; weigh how they were split and how their parts went before you decide. A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out. The facts are as they stood when the tree last moved: "not finished" with an old "last moved" is a stale record, not a tree running now. courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use.
-- ses_part 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished · recalled by a part"
-`;
-
-exports[`memory recallListText 4`] = `"- ses_long 2026-10-03: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx… [20 more characters]" · split: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy… [47 more characters] · no parts · ran 42 min · last moved 3 min ago · finished"`;
-
-exports[`memory recallListText 5`] = `"- ses_md 2026-10-03: "Add memory to courier" · split: 3 parts: the core of the memory record, its end-to-end scenario in the live suite, and the reference's Memory section, each in a session of its own. · no parts · ran 42 min · last moved 3 min ago · finished"`;
-
-exports[`memory recordLine with a gone part 1`] = `"- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 gone, 3 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished"`;
-
-exports[`memory recordLine with a revised split line 1`] = `"- ses_staged 2026-10-03: "Add memory to courier" · split: 1 part: the core · then, after 1 part: split: 2 parts: its tests, its docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished"`;
-
-exports[`memory recordLine with a revised split line 2`] = `"- ses_long 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · then, after 2 parts: split: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy… [47 more characters] · no parts · ran 42 min · last moved 3 min ago · finished"`;
-
-exports[`memory recallRecordText 1`] = `
-"Record of the tree under ses_old, in project proj_1 (durations in milliseconds, context use as a share of the model's window):
-{
-  "projectID": "proj_1",
-  "sessionID": "ses_old",
-  "startedAt": 1791018000000,
-  "movedAt": 1791020520000,
-  "title": "Add memory to courier",
-  "split": "split: 3 parts: core, e2e, docs",
-  "finished": true,
-  "parts": [
-    {
-      "sessionID": "ses_core",
-      "title": "Core",
-      "depth": 1,
-      "isolated": true,
-      "group": "wave",
-      "status": "done",
-      "duration": 540000,
-      "cost": 0.42,
-      "context": 0.31
-    },
-    {
-      "sessionID": "ses_e2e",
-      "title": "E2E",
-      "depth": 1,
-      "isolated": true,
-      "group": "wave",
-      "status": "partial",
-      "duration": 600000,
-      "cost": 0.81,
-      "refused": 1
-    },
-    {
-      "sessionID": "ses_review",
-      "title": "Review",
-      "depth": 2,
-      "isolated": false,
-      "status": "out",
-      "duration": 60000
-    }
-  ]
-}"
-`;
-
-exports[`memory recallRecordText with revisions 1`] = `
-"Record of the tree under ses_staged, in project proj_1 (durations in milliseconds, context use as a share of the model's window):
-{
-  "projectID": "proj_1",
-  "sessionID": "ses_staged",
-  "startedAt": 1791018000000,
-  "movedAt": 1791020520000,
-  "title": "Add memory to courier",
-  "split": "split: 1 part: the core",
-  "finished": true,
-  "parts": [
-    {
-      "sessionID": "ses_core",
-      "title": "Core",
-      "depth": 1,
-      "isolated": true,
-      "group": "wave",
-      "status": "done",
-      "duration": 540000,
-      "cost": 0.42,
-      "context": 0.31
-    },
-    {
-      "sessionID": "ses_e2e",
-      "title": "E2E",
-      "depth": 1,
-      "isolated": true,
-      "group": "wave",
-      "status": "partial",
-      "duration": 600000,
-      "cost": 0.81,
-      "refused": 1
-    },
-    {
-      "sessionID": "ses_review",
-      "title": "Review",
-      "depth": 2,
-      "isolated": false,
-      "status": "out",
-      "duration": 60000
-    }
-  ],
-  "revisions": [
-    {
-      "text": "split: 2 parts: its tests, its docs",
-      "at": 1791019800000,
-      "parts": 1
-    }
-  ]
-}"
-`;
-
-exports[`memory recallMissingText 1`] = `"No record of a tree whose top session is ses_none in this project. courier_recall without sessionID lists the records there are."`;
-
-exports[`memory recordLine with a lesson 1`] = `"- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself.""`;
-
-exports[`memory recordLine with a lesson 2`] = `"- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished · lesson (2026-10-03, from depth 2): "The docs part was ten lines; next time do it yourself.""`;
-
-exports[`memory recordLine and recallListText with a pinned record 1`] = `"- ses_pinned 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished · pinned · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself.""`;
-
-exports[`memory recordLine and recallListText with a pinned record 2`] = `
-"2 earlier trees recorded in this project, pinned first, then newest first; weigh how they were split and how their parts went before you decide. A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out. The facts are as they stood when the tree last moved: "not finished" with an old "last moved" is a stale record, not a tree running now. courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use. A record marked "pinned" is one the person chose to keep and listed first: weigh it before the rest.
-- ses_pinned 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished · pinned · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
-- ses_now (this tree) 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · no parts · ran 42 min · last moved 3 min ago · not finished · recalled
-- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished"
-`;
-
-exports[`memory recordLine and recallListText with a pinned record 3`] = `
-"Record of the tree under ses_pinned, in project proj_1 (durations in milliseconds, context use as a share of the model's window):
-{
-  "projectID": "proj_1",
-  "sessionID": "ses_pinned",
-  "startedAt": 1791018000000,
-  "movedAt": 1791020520000,
-  "title": "Add memory to courier",
-  "split": "split: 3 parts: core, e2e, docs",
-  "finished": true,
-  "parts": [
-    {
-      "sessionID": "ses_core",
-      "title": "Core",
-      "depth": 1,
-      "isolated": true,
-      "group": "wave",
-      "status": "done",
-      "duration": 540000,
-      "cost": 0.42,
-      "context": 0.31
-    },
-    {
-      "sessionID": "ses_e2e",
-      "title": "E2E",
-      "depth": 1,
-      "isolated": true,
-      "group": "wave",
-      "status": "partial",
-      "duration": 600000,
-      "cost": 0.81,
-      "refused": 1
-    },
-    {
-      "sessionID": "ses_review",
-      "title": "Review",
-      "depth": 2,
-      "isolated": false,
-      "status": "out",
-      "duration": 60000
-    }
-  ],
-  "pinned": {
-    "at": 1791020640000
-  },
-  "reads": {
-    "shown": 7,
-    "read": 1,
-    "at": 1791020640000
-  },
-  "lesson": {
-    "text": "The docs part was ten lines; next time do it yourself.",
-    "at": 1791020400000
-  }
-}"
-`;
-
-exports[`memory noteText 1`] = `"Noted on the record of the tree under ses_top as its lesson (2026-10-03): "The docs part was ten lines; next time do it yourself.". courier_recall lists it after the tree's facts; a second courier_note replaces it. A lesson that holds every time belongs in AGENTS.md or the skill, which only the person puts there: tell them instead of noting it."`;
-
-exports[`memory noteText 2`] = `"Noted on the record of the tree under ses_top as its lesson (2026-10-03, from depth 1): "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx". It replaces the lesson (2026-10-03): "The docs part was ten lines; next time do it yourself.". courier_recall lists it after the tree's facts; a second courier_note replaces it. A lesson that holds every time belongs in AGENTS.md or the skill, which only the person puts there: tell them instead of noting it."`;
-
-exports[`memory NOTE_OFF 1`] = `"Not noted: the plugin's memory option is false, so no record of a session tree is kept in this project to write a lesson on."`;
-
-exports[`memory noteBelowRefusal 1`] = `"Not noted: this session is at depth 1 of the session tree under ses_top, and only that top session writes the tree's lesson, once the whole tree is verified. Put what you learned in your report instead: the top reads it and writes the tree's lesson."`;
-
-exports[`memory NOTE_EMPTY 1`] = `"Not noted: text is empty. Write one line, what the next orchestrator in this project should know about running a tree like this one, with the job it comes from and the reason, or nothing."`;
-
-exports[`memory noteLongRefusal 1`] = `"Not noted: the lesson is 312 characters, at most 300; write it shorter. Nothing was written, and the earlier lesson, if there was one, stays. Keep one line, what the next orchestrator in this project should know about running a tree like this one, with the job it comes from and the reason, and leave out what the record's facts already say."`;
-
-exports[`memory noteUnrecordedRefusal 1`] = `"Not noted: the tree under ses_top has no record in this project to write a lesson on. A record is written by a courier_recall call and as each turn in the tree ends, so call it once first, or note once a session you started has reported."`;
-
 exports[`the session instruction entries (#384) standingEntry 1`] = `
 "opencode-courier standing: the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need not look with courier_children or courier_tree; a report, a group's reports or a notice still reach you as a message.
 - ses_core "Core: the memory record": reported done; its report is held with group "wave"
@@ -1844,10 +1579,4 @@ exports[`the session instruction entries (#384) standingEntry 1`] = `
 exports[`the session instruction entries (#384) standingEntry 2`] = `
 "opencode-courier standing: the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need not look with courier_children or courier_tree; a report, a group's reports or a notice still reach you as a message.
 - ses_one "One": started"
-`;
-
-exports[`the session instruction entries (#384) lessonsEntry 1`] = `
-"opencode-courier lessons: what the orchestrators of earlier session trees in this project concluded, each with its tree's title; courier_recall has the records with the facts behind them.
-- ses_pinned "Add memory to courier": lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
-- ses_old "Split the lexer from the parser": lesson (2026-10-03, from depth 1): "The lexer and the parser collided in one file; give them to one session.""
 `;

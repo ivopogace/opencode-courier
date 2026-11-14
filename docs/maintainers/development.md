@@ -48,8 +48,9 @@ and openssl. New behaviour gets a scenario there.
   ([the trap](plugin-api-notes.md#native-parentid)).
 - A check that something did not happen never waits out a timeout. It first waits for an event
   ordered after the point where the unwanted thing would have happened, then checks once:
-  `end_handled` after `turn_ended` for what the courier does at a turn's end (its memory module
-  records the tree after the tree module has handled the end), a message delivered at the same tick,
+  `end_handled` after `turn_ended` for what the courier does at a turn's end (it deletes a marker
+  session the roster lists and waits for the courier to forget it, which it handles after every
+  earlier event), a message delivered at the same tick,
   a storage key the path removes last, `wait_log` for a server log line. A wait that fails after N seconds when the event never comes
   is fine.
 

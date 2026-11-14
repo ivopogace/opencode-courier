@@ -4,7 +4,6 @@ import { holdReport, joinGroup, membershipOf } from "../src/tree/group.js"
 import type { RosterStorage } from "../src/tree/ports.js"
 import { pruneExpired } from "../src/tree/roster.js"
 import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
-import { memoryStore } from "../src/memory/store.js"
 
 function loggingStorage() {
   const store = new Map<string, string>()
@@ -140,47 +139,4 @@ test("the wake store keeps a watched message under wake/<sessionID>/<inboxID>, w
   writes.length = 0
   await wakes.remove("ses_parent", "msg_1")
   expect(writes).toEqual(["remove wake/ses_parent/msg_1"])
-})
-
-test("the memory store keeps a tree's record under memory/<projectID>/<topSessionID>, as the reference describes it, and reads back what it wrote", async () => {
-  const { storage, writes } = loggingStorage()
-  const records = memoryStore(storage)
-  const record = {
-    startedAt: 1760000000000,
-    movedAt: 1760000900000,
-    title: "Add memory to courier",
-    split: "split: 3 parts: core, e2e, docs",
-    revisions: [{ text: "split: 2 parts: e2e, docs", at: 1760000600000, parts: 1 }],
-    finished: true,
-    recalled: { at: 1760000001000, calls: 1 },
-    lesson: { text: "The docs part was ten lines; next time do it yourself.", at: 1760000890000 },
-    parts: [
-      { sessionID: "ses_core", title: "Core", depth: 1, isolated: true, group: "wave", status: "done" as const, duration: 540000, cost: 0.42, context: 0.31, refused: 1 },
-      { sessionID: "ses_docs", title: "Docs", depth: 1, isolated: false, status: "out" as const, duration: 60000 },
-    ],
-  }
-  await records.put("proj_1", "ses_top", record)
-  expect(writes).toEqual([
-    'set memory/proj_1/ses_top {"startedAt":1760000000000,"movedAt":1760000900000,"title":"Add memory to courier","split":"split: 3 parts: core, e2e, docs","revisions":[{"text":"split: 2 parts: e2e, docs","at":1760000600000,"parts":1}],"finished":true,"recalled":{"at":1760000001000,"calls":1},"lesson":{"text":"The docs part was ten lines; next time do it yourself.","at":1760000890000},"parts":[{"sessionID":"ses_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31,"refused":1},{"sessionID":"ses_docs","title":"Docs","depth":1,"isolated":false,"status":"out","duration":60000}]}',
-  ])
-  expect(await records.get("proj_1", "ses_top")).toEqual(record)
-  expect(await records.ofProject("proj_1")).toEqual([{ ...record, projectID: "proj_1", sessionID: "ses_top" }])
-  writes.length = 0
-  await records.pin("proj_1", "ses_top", { at: 1760001000000 })
-  await records.noteRead("proj_1", "ses_top", "ses_reader", "shown", 1760002000000)
-  await records.noteRead("proj_1", "ses_top", "ses_reader", "read", 1760003000000)
-  expect(writes).toEqual([
-    'set memory/proj_1/ses_top/pin {"at":1760001000000}',
-    'set memory/proj_1/ses_top/reads/ses_reader {"shown":1,"read":0,"at":1760002000000}',
-    'set memory/proj_1/ses_top/reads/ses_reader {"shown":1,"read":1,"at":1760003000000}',
-  ])
-  const beside = { reads: { shown: 1, read: 1, at: 1760003000000 }, pinned: { at: 1760001000000 } }
-  expect(await records.get("proj_1", "ses_top")).toEqual({ ...record, ...beside })
-  writes.length = 0
-  await records.put("proj_1", "ses_top", { ...record, ...beside })
-  expect(writes[0]).not.toContain("reads")
-  expect(writes[0]).not.toContain("pinned")
-  writes.length = 0
-  await records.remove("proj_1", "ses_top")
-  expect(writes).toEqual(["remove memory/proj_1/ses_top", "remove memory/proj_1/ses_top/pin", "remove memory/proj_1/ses_top/reads/ses_reader"])
 })

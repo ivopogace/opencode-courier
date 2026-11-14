@@ -24,27 +24,17 @@ type Answer = { readonly stamp: string; readonly turn: Promise<Turn>; until: num
 
 const answers = new WeakMap<Session, Map<string, Answer>>()
 
-type Messages = Awaited<ReturnType<Session["context"]>>
-
 export function turnOf(session: Session, sessionID: string, time: BusyTimes, now = Date.now()): Promise<Turn> {
-  return resolve(session, sessionID, time, now, () => session.context({ sessionID }), true)
-}
-
-export function turnIn(session: Session, sessionID: string, time: BusyTimes, messages: Promise<Messages>, now = Date.now()): Promise<Turn> {
-  return resolve(session, sessionID, time, now, () => messages, false)
-}
-
-function resolve(session: Session, sessionID: string, time: BusyTimes, now: number, load: () => Promise<Messages>, cached: boolean): Promise<Turn> {
   if (!busy(time)) return Promise.resolve(rest(millis(time.idle)))
   const known = answers.get(session) ?? new Map<string, Answer>()
   answers.set(session, known)
   const stamp = [time.updated, time.idle, time.busy].map(millis).join(" ")
   const found = known.get(sessionID)
-  if (cached && found?.stamp === stamp && now < found.until) return found.turn
+  if (found?.stamp === stamp && now < found.until) return found.turn
   const forget = () => {
     if (known.get(sessionID) === answer) known.delete(sessionID)
   }
-  const turn = load().then(
+  const turn = session.context({ sessionID }).then(
     (messages): Turn => {
       const end = turnEnd(messages)
       if (!messages.length) forget()

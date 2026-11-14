@@ -2,7 +2,7 @@ import { num, obj, str } from "../platform/json.js"
 import type { Status } from "../kernel/protocol.js"
 import { scanAll, scanEntries, type Storage } from "../platform/storage.js"
 import { lineageIn, type RosterEntry } from "./domain.js"
-import type { ChildStore, ReportField, ReportNote, Settled, Stored, Typed, Wake, WakeStore } from "./ports.js"
+import type { ChildStore, ReportField, ReportNote, Settled, Typed, Wake, WakeStore } from "./ports.js"
 
 const ROSTER_PREFIX = "roster/"
 const BY_CHILD = "roster-by-child/"

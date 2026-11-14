@@ -15,7 +15,7 @@ polling.
 
 The main case in the `/courier tree` panel: two issues, a lead per issue, two workers under each. A
 worker's finding wakes its lead as it comes, the lead passes it on, and the sibling rewrites its
-test. The leads are a join group: the orchestrator needs only both results.
+test. Each lead's report wakes the orchestrator as it comes.
 
 ## Quickstart
 

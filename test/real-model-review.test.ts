@@ -25,7 +25,7 @@ const send = (sessionID: string, message: string, status?: string) => tool("cour
 const shell = (command: string) => tool("shell", { command })
 const report = (from: string, status: string, text: string): Message => ({ type: "synthetic", text: `<courier from="${from}" status="${status}">\n${text}\n</courier>`, time: { created: tick() } })
 
-type Variant = "clean" | "fixed" | "review-edits" | "review-redirects" | "review-stashes" | "review-reads-stash" | "review-compares" | "review-scratch" | "review-copies-in" | "review-apostrophe" | "review-inner-script" | "review-heredoc" | "no-review" | "root-skips-tests" | "root-polls"
+type Variant = "clean" | "fixed" | "review-edits" | "review-redirects" | "review-stashes" | "review-reads-stash" | "review-compares" | "review-scratch" | "review-copies-in" | "review-apostrophe" | "review-inner-script" | "review-searches" | "review-fed-script" |"review-heredoc" | "no-review" | "root-skips-tests" | "root-polls"
 
 function transcripts(variant: Variant): Record<string, Message[]> {
   const impl = [user("make the change"), step("tool-calls", tool("skill", { id: "test-driven-development" }), tool("write", { path: "lib/words.js" }), tool("edit", { path: "test/words.test.js" }), shell("npm test"), shell("git commit -am slugify"), send("ses_root", "Added slugify with three tests; npm test passes 5.", "done")), step("stop", say("Reported.")), idle()]
@@ -44,6 +44,8 @@ function transcripts(variant: Variant): Record<string, Message[]> {
   if (variant === "review-copies-in") reviewerTools.push(shell("cp /tmp/mut/lib/words.js lib/words.js"))
   if (variant === "review-apostrophe") reviewerTools.push(shell("echo \"it's done\" > lib/status.txt && grep 'x' lib/words.js"))
   if (variant === "review-inner-script") reviewerTools.push(shell("bash -c 'rm lib/words.js'"))
+  if (variant === "review-searches") reviewerTools.push(shell('grep -n "rm" lib/words.js | grep -v cp; find lib -type f | xargs grep -n mkdir'))
+  if (variant === "review-fed-script") reviewerTools.push(shell(["bash <<'EOF'", "set -e", "/bin/rm lib/words.js", "EOF"].join("\n")))
   if (variant === "review-heredoc") reviewerTools.push(shell(["cat > /tmp/probe.mjs <<'EOF'", "// it's a probe", "console.log(1 > 0)", "EOF", "cp /tmp/probe.mjs lib/probe.mjs && node -e 'console.log(1)'"].join("\n")))
   const finding = variant === "fixed" ? "One finding: slugify keeps a trailing hyphen for input ending in two punctuation marks." : "No findings: the change meets the job."
   const reviewer = [user("review the change"), step("tool-calls", ...reviewerTools, send("ses_root", finding, "done")), step("stop", say("Reported.")), idle()]
@@ -136,6 +138,14 @@ describe("the review checker", () => {
 
   test("a review session that removed a file through bash -c fails the review check", () => {
     expect(check("review-inner-script").failed).toEqual(["the review session changed nothing: no file tool, no shell command that writes, commits or installs, and nothing it started did either"])
+  })
+
+  test("a review session that searched for the name of a file command passes: the name is an argument", () => {
+    expect(check("review-searches").failed).toEqual([])
+  })
+
+  test("a review session that fed a shell a heredoc that removes a file fails the review check", () => {
+    expect(check("review-fed-script").failed).toEqual(["the review session changed nothing: no file tool, no shell command that writes, commits or installs, and nothing it started did either"])
   })
 
   test("a review session that copied into the checkout after a heredoc with an apostrophe fails the review check", () => {

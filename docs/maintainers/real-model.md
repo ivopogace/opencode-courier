@@ -415,8 +415,9 @@ project's tests itself in the root's checkout (`COURIER_TEST_COMMAND`; the runne
 report in it; a review session in a later turn; the review session and anything it started changed
 nothing (no `write`, `edit` or `patch`, no shell command that commits, stages, installs, edits in
 place, redirects into a file, or removes, moves, copies or creates one; the script given to
-`sh -c` or `bash -c` is read too, a file under `/tmp/` does not count, and a `>` inside a quoted
-string is not a redirect); its report reached the root before the final reply; no polling;
+`sh -c` or `bash -c`, or fed to a shell as a heredoc, is read too; a file under `/tmp/` does not
+count, a `>` inside a quoted string is not a redirect, and the name of a file command counts only
+where a command stands); its report reached the root before the final reply; no polling;
 every session reported with a status; the root ran the tests itself after the review's report; the
 files exist and the first holds the symbol (`COURIER_EXPECT`); the tests pass, `COURIER_TESTS` or
 more; the reply holds `REVIEWED` and that number. Its notes say, per session the root started, which

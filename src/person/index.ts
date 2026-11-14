@@ -10,7 +10,7 @@ export type { FormsShown, PersonPorts, PersonState } from "./ports.js"
 export { registerPersonRpc } from "./rpc-handlers.js"
 export { asksQuestion, joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions } from "./question/index.js"
 export type { QuestionPorts } from "./question/index.js"
-export { addPersonTools } from "./tools.js"
+export { addPersonTools, ANSWER_TOOL } from "./tools.js"
 export type { PersonToolPorts } from "./tools.js"
 
 type Satisfies<T extends U, U> = T

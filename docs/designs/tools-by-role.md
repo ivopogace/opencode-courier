@@ -1,7 +1,7 @@
 # Tools by role
 
 *   **Author:** Ivo Pogace
-*   **Status:** Agreed, not implemented
+*   **Status:** Implemented
 *   **Date:** 2026-11-15
 
 --------------------------------------------------------------------------------

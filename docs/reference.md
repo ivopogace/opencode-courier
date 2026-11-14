@@ -216,9 +216,21 @@ written as it is started; a root gets its own at its first spawn, which its tran
 "Instructions updated: api/role, api/standing".
 On an older OpenCode the plugin adds the line as a system part on each
 model request instead. A session below `maxDepth` is a `sub-orchestrator`. One at `maxDepth` is a
-`leaf`, and its requests go without `courier_spawn`. A top
+`leaf`. A top
 session that has started no session yet is pointed to the skill; once it has, it is the `root
 orchestrator`, told to load the skill if the skill is not in its context (after a compaction, say).
+
+**The tools a leaf is offered.** A leaf cannot start sessions, so its requests carry four of the
+courier's tools: `courier_send`, `courier_tree`, `courier_later` and `courier_cancel`.
+`courier_spawn`, `courier_stop`, `courier_cleanup` and `courier_answer` are left out: the last
+three act on sessions the caller started, or on sessions under those, and a leaf has none. If its
+model calls one anyway, OpenCode answers that the tool is not available for this request, and the
+turn goes on. Every other session is offered all eight on every request, a top session before its
+first spawn too. A session that started children and is then at `maxDepth`, because the option was
+lowered between two starts of the server, is a leaf with children it cannot stop or clean up
+itself: a session above it does that with `courier_stop` and `cleanup: true`, or you stop them
+in the [tree panel](#the-tree-panel).
+
 The root may also hand a heavy task whole to one session, to keep its own context:
 `split: 1 part: <the task>, to keep my context`. The brief, the role line and the skill set each
 split-line form in backticks, so its own semicolon and comma read as part of the form; the plugin
@@ -624,7 +636,7 @@ sessions. Nothing copied is edited: the notice and the removal are appended, so 
 begins with the same system prompt and messages as the original's where OpenCode's own copy does
 ([the notes](maintainers/plugin-api-notes.md#keyed-session-instructions)). The fork's system prompt
 keeps the original's role block until a compaction; from then, or from its first `courier_spawn`,
-it reads the root's role. A fork of a leaf can start sessions. A fork of a session outside any tree
+it reads the root's role. A fork of a leaf is offered all eight tools and can start sessions. A fork of a session outside any tree
 is left alone. Without the hook, on an older OpenCode, a fork is a top session all the same and is
 told nothing.
 
@@ -761,7 +773,7 @@ subagents' own subagents too.
   prompts that child as a plain `user` item, which courier passes up to the parent too, as
   `route="prompt"` ([steering](#steering-a-running-tree)). A plain subagent has no roster parent,
   so a follow-up into it is passed to nobody.
-- **No role.** Their requests carry no role line and go without `courier_spawn`, as a leaf's do:
+- **No role.** Their requests carry no role line and [the four tools a leaf is offered](#session-trees-and-their-limits):
   a subagent answers its parent's tool call and starts no tree of its own. The plugin tells one by its OpenCode `parentID` and its missing roster entry. A subagent of a
   session in no tree (one that neither started a session nor was started by one) is a top session
   like any other and is pointed to the skill, until that session starts one.

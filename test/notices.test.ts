@@ -535,6 +535,29 @@ describe("the session instruction entries (#384)", () => {
   })
 })
 
+describe("what a session that cannot start sessions is told (#633)", () => {
+  const OFFERED = ["courier_send", "courier_tree", "courier_later", "courier_cancel"]
+  const named = (text: string) => [...new Set(text.match(/courier_[a-z]+/g) ?? [])]
+  const limits = { maxDepth: 3, maxChildren: 5, maxTotal: 20 }
+
+  test("its brief, its role line and the reminder name no tool it is not offered", () => {
+    const read = [
+      treeText.childBrief("ses_parent", "Fix the bug", 3, limits),
+      treeText.childBrief("ses_parent", "Fix the bug", 3, limits, treeText.childBranch("ses_child")),
+      treeText.rolePart(3, limits),
+      treeText.rolePart(3, limits, true),
+      treeText.reportReminder("ses_parent"),
+    ]
+    for (const text of read) expect(named(text).filter((name) => !OFFERED.includes(name))).toEqual([])
+    expect(named(read.join(" ")).toSorted()).toEqual(["courier_cancel", "courier_later", "courier_send"])
+  })
+
+  test("the brief and the role line above maxDepth do name courier_spawn, so the check can fail", () => {
+    expect(named(treeText.childBrief("ses_parent", "Fix the bug", 2, limits))).toContain("courier_spawn")
+    expect(named(treeText.rolePart(2, limits))).toContain("courier_spawn")
+  })
+})
+
 describe("what 0.17.0 removed", () => {
   const REMOVED_NAMES = ["courier_children", "courier_recall", "courier_note", "nativeChildren", "lessons", "join group"]
   const REMOVED_PARAMETERS = ["group", "finding", "queue"]

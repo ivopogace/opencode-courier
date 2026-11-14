@@ -142,8 +142,12 @@ function decide(body) {
       if (call?.function?.name === "courier_later") return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MID DONE BEFORE CHECK-IN", status: "done" } }
       if (call?.function?.name === "courier_send") return { text: "MID REPORTED" }
     }
-    if (call?.function?.name === "courier_spawn" && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-LEAF"))
-      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `LEAF GOT ${result}`, status: "done" } }
+    const leaf = startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-LEAF")
+    if (call?.function?.name === "courier_spawn" && leaf) return { tool: "courier_stop", args: { sessionID: startedBy[1] } }
+    if (call?.function?.name === "courier_stop" && leaf) {
+      const spawned = textOf(messages.findLast((message) => message.role === "tool" && message !== last)?.content)
+      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `LEAF GOT ${spawned} AND ${result}`, status: "done" } }
+    }
     if ((call?.function?.name === "shell" || call?.function?.name === "websearch") && startedBy)
       return { tool: "courier_send", args: { sessionID: startedBy[1], message: `CHILD DONE ${call.function.name}: ${result}`, status: "done" } }
     if (call?.function?.name === "question") {

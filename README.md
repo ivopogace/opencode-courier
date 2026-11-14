@@ -128,7 +128,9 @@ form. Its one option, `"animations": false`, keeps the tree panel still.
 | `courier_answer` | Proposes an answer to a child's permission request, or passes on your answer to its question. |
 | `courier_later` / `courier_cancel` | Schedules a message for a session, or drops one. |
 
-Parameters and behaviour: [the reference](docs/reference.md#the-tools).
+A session that cannot start sessions (one at `maxDepth`, or an OpenCode subagent in a tree) is
+offered `courier_send`, `courier_tree`, `courier_later` and `courier_cancel` only. Parameters and
+behaviour: [the reference](docs/reference.md#the-tools).
 
 ## In the terminal
 

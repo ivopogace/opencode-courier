@@ -17,8 +17,23 @@ const LOOKS = new Set(["courier_children", "courier_tree"])
 const RECALL = "courier_recall"
 const SKILL = "courier-orchestrate"
 const CHANGING_TOOLS = new Set(["write", "edit", "patch", "apply_patch", "multiedit"])
-const CHANGING_SHELL =
-  /\bgit\s+(commit|add|merge|checkout|switch|reset|stash(?!\s+(?:list|show)\b)|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b|\b(rm|mv|cp|mkdir|touch|tee|chmod)\s|(?<![\d&<=-])>(?!\s*&|\s*\/dev\/null)/
+const CHANGING_COMMAND = /\bgit\s+(commit|add|merge|checkout|switch|reset|stash(?!\s+(?:list|show)\b)|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b/
+const REDIRECT = /(?<![\d&<=>-])>>?(?![>&]|\s*&|\s*\/dev\/null|\s*\/tmp\/)/
+const FILE_COMMAND = /(?:^|\s)(rm|mv|cp|mkdir|touch|tee|chmod)\s+(.*)$/
+const inTmp = (path) => path.startsWith("/tmp/")
+function writesOutsideTmp(script) {
+  return script.split(/&&|\|\||[;|\n()]|\bdo\b|\bthen\b/).some((part) => {
+    const found = FILE_COMMAND.exec(part.replace(/\d*>.*$/, ""))
+    if (!found) return false
+    const paths = found[2].split(/\s+/).filter((word) => word && !word.startsWith("-"))
+    const targets = found[1] === "cp" ? paths.slice(-1) : found[1] === "chmod" ? paths.slice(1) : paths
+    return targets.length === 0 || !targets.every(inTmp)
+  })
+}
+function changingShell(command) {
+  const unquoted = command.replace(/\x27[^\x27]*\x27/g, "Q")
+  return CHANGING_COMMAND.test(command) || REDIRECT.test(unquoted.replace(/"(?:\\.|[^"\\])*"/g, "Q")) || writesOutsideTmp(unquoted.replaceAll('"', ""))
+}
 const TEST_SHELL = /\b(npm|pnpm|yarn|bun)(\s+run)?\s+test\b|\bnode\s+--test\b/
 const loadsAnySkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed"
 
@@ -200,7 +215,7 @@ const reviewReport = review ? deliveriesFrom(root, review.id)[0] : undefined
 const afterReview = reviewReport ? rootSpawns.filter((spawn) => spawn.index > reviewReport.index) : []
 const subtreeOf = (id) => [id, ...spawnsOf(tree.get(id)?.list ?? []).filter((child) => tree.has(child)).flatMap(subtreeOf)]
 const changes = (list) =>
-  toolsOf(list).filter((part) => part.state.status === "completed" && (CHANGING_TOOLS.has(part.name) || (part.name === "shell" && CHANGING_SHELL.test(part.state.input?.command ?? ""))))
+  toolsOf(list).filter((part) => part.state.status === "completed" && (CHANGING_TOOLS.has(part.name) || (part.name === "shell" && changingShell(part.state.input?.command ?? ""))))
 const changesBelow = (id) => subtreeOf(id).flatMap((member) => changes(tree.get(member).list).map((part) => ({ id: member, part })))
 const sleeps = (part) => part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))
 const looksIn = (turn) => toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || sleeps(part)).length

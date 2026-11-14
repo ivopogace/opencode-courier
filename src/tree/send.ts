@@ -28,7 +28,7 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
 
 async function deliver(ports: CourierPorts, from: string, input: SendInput, status: Status | undefined): Promise<Sent> {
   const text = envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {})
-  const description = `Message from ${from}`
+  const description = `Message from ${await nameOf(ports, from)}`
   const delivered = await ports.session.synthetic({
     sessionID: input.sessionID,
     text,
@@ -38,6 +38,17 @@ async function deliver(ports: CourierPorts, from: string, input: SendInput, stat
   })
   await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
   return { messageID: delivered.id, ...(status ? { status } : {}) }
+}
+
+const NAME_MAX = 60
+
+async function nameOf(ports: CourierPorts, sessionID: string) {
+  const title = await Promise.resolve()
+    .then(() => ports.session.get({ sessionID }))
+    .then((info) => (typeof info?.title === "string" ? info.title.replace(/\s+/g, " ").trim() : ""))
+    .catch(() => "")
+  if (!title) return sessionID
+  return title.length > NAME_MAX ? `${title.slice(0, NAME_MAX - 1).trimEnd()}…` : title
 }
 
 async function statusFor(ports: CourierPorts, from: string, input: SendInput): Promise<{ status?: Status; dropped?: Status }> {

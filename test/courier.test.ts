@@ -701,17 +701,52 @@ describe("send", () => {
     const result = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done: PR #4" })
 
     expect(result).toEqual({ messageID: "msg_2" })
-    expect(calls[0]).toEqual({
+    expect(afterLookups(calls)[0]).toEqual({
       method: "session.synthetic",
       input: {
         sessionID: "ses_parent",
         text: envelope("ses_child", "Done: PR #4"),
-        description: "Message from ses_child",
+        description: "Message from Fix the bug",
         metadata: { source: "courier", from: "ses_child" },
         delivery: "steer",
       },
     })
-    expect(calls[0]!.input).not.toHaveProperty("resume")
+    expect(afterLookups(calls)[0]!.input).not.toHaveProperty("resume")
+  })
+
+  test("names the sender by its title in the transcript line, in either direction, and keeps that line for a wake retry", async () => {
+    const { ports, calls, store } = fakePorts({ info: { title: "  Fix\nthe   bug " } })
+
+    await send(ports, "ses_parent", { sessionID: "ses_child", message: "m" })
+
+    expect(calls.filter((call) => call.method === "session.get").map((call) => call.input)).toEqual([{ sessionID: "ses_parent" }])
+    expect(afterLookups(calls)[0]!.input.description).toBe("Message from Fix the bug")
+    expect(afterLookups(calls)[0]!.input.metadata).toEqual({ source: "courier", from: "ses_parent" })
+    expect([...store].filter(([key]) => key.startsWith("wake/")).map(([, value]) => (value as { description: string }).description)).toEqual(["Message from Fix the bug"])
+  })
+
+  test("names the sender by its session id when its title is empty or cannot be read, and the send goes through", async () => {
+    for (const session of [{ info: { title: "" } }, { info: { title: " \n " } }, { info: { title: undefined } }]) {
+      const { ports, calls } = fakePorts(session)
+      expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).toEqual({ messageID: "msg_2" })
+      expect(afterLookups(calls)[0]!.input.description).toBe("Message from ses_child")
+    }
+    const { ports, calls } = fakePorts()
+    ;(ports.session as any).get = async () => Promise.reject(new Error("gone"))
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).toEqual({ messageID: "msg_2" })
+    ;(ports.session as any).get = () => {
+      throw new Error("not there")
+    }
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).toEqual({ messageID: "msg_2" })
+    expect(calls.filter((call) => call.method === "session.synthetic").map((call) => call.input.description)).toEqual(["Message from ses_child", "Message from ses_child"])
+  })
+
+  test("shortens a long title in the transcript line to 60 characters", async () => {
+    const { ports, calls } = fakePorts({ info: { title: `${"a".repeat(58)} bcdef` } })
+
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })
+
+    expect(afterLookups(calls)[0]!.input.description).toBe(`Message from ${"a".repeat(58)}…`)
   })
 
   test("steers a message in even when a model still passes queue", async () => {
@@ -719,7 +754,7 @@ describe("send", () => {
 
     await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", queue: true } as never)
 
-    expect(calls[0]!.input.delivery).toBe("steer")
+    expect(afterLookups(calls)[0]!.input.delivery).toBe("steer")
   })
 
   const spawned = { sessionID: "ses_child", parentID: "ses_parent", title: "t", directory: "/repo", isolated: false, createdAt: 1, reports: "status" as const }
@@ -743,14 +778,14 @@ describe("send", () => {
 
     await send(ports, "ses_child", { sessionID: "ses_parent", message: "Fixed it.", status: "done", artifacts })
 
-    expect(calls[0]!.input).toEqual({
+    expect(afterLookups(calls)[0]!.input).toEqual({
       sessionID: "ses_parent",
       text: envelope("ses_child", reportBody("Fixed it.", artifacts), { status: "done" }),
-      description: "Message from ses_child",
+      description: "Message from Fix the bug",
       metadata: { source: "courier", from: "ses_child", status: "done" },
       delivery: "steer",
     })
-    expect(calls[0]!.input.text).toStartWith('<courier from="ses_child" status="done">\nFixed it.\n\nArtifacts:\n- branch: fix/checkout\n')
+    expect(afterLookups(calls)[0]!.input.text).toStartWith('<courier from="ses_child" status="done">\nFixed it.\n\nArtifacts:\n- branch: fix/checkout\n')
   })
 
   test("drops a status on a message to a session below the sender, where it means nothing, and says so", async () => {
@@ -759,7 +794,7 @@ describe("send", () => {
     await childStore(ports.storage).record({ ...spawned, sessionID: "ses_grand", parentID: "ses_child" })
 
     expect(await send(ports, "ses_parent", { sessionID: "ses_grand", message: "Undo it.", status: "blocked" })).toEqual({ messageID: "msg_2", dropped: "blocked" })
-    expect(calls[0]!.input).toMatchObject({ text: envelope("ses_parent", "Undo it."), metadata: { source: "courier", from: "ses_parent" } })
+    expect(afterLookups(calls)[0]!.input).toMatchObject({ text: envelope("ses_parent", "Undo it."), metadata: { source: "courier", from: "ses_parent" } })
     expect(await send(ports, "ses_child", { sessionID: "ses_grand", message: "m", status: "done" })).toEqual({ messageID: "msg_2", dropped: "done" })
     expect(await send(ports, "ses_grand", { sessionID: "ses_child", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
     expect(await send(ports, "ses_grand", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done" })

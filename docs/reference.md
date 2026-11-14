@@ -580,6 +580,11 @@ its other children, which steers their running turns. A `status` belongs on a re
 message to a session below the sender it is dropped, the message goes without it, and the result says
 so.
 
+The line a transcript shows for a courier message, in either direction, is `Message from` and the
+sender's title, its whitespace collapsed and shortened to 60 characters. Where the title is empty or
+cannot be read, the line names the sender's session id, and the message is sent all the same. A
+missed wake re-sent later shows the same line. The model reads the envelope, not this line.
+
 A child that finds something the other parts need sends it to its parent without a status, and a
 parent below the top passes it on up when it reaches past its own part
 ([the brief](#session-trees-and-their-limits)). A parent with the skill passes a finding, and text

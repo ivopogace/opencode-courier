@@ -231,6 +231,8 @@ echo "the TUI shows the entry in the prompt's footer, and follows the answer"
 open_tui tui "$parent"
 check "the footer shows what the RPC gave" "$(shows "courier 1 waiting on you · 1 idle" 60 tui-waiting)"
 echo "  $(footer tui-waiting)"
+check "the parent's transcript names the reporting child by its title in the message's line, not by its session id" \
+  "$([ "$(shows "Message from Report back to your parent." 30 tui-message-line)" = true ] && ! grep -qF "Message from ses_" "$WORK/tui-message-line.txt" && echo true || echo false)"
 echo "the tree panel: /courier tree opens it on both children, with the bar of the parts reported"
 rows=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[] | {depth, state, report: .report.state, group: has("group")}] | sort_by(.state)')
 echo "  $rows"

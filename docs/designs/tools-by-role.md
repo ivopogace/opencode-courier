@@ -66,8 +66,9 @@ what happens when a session's role changes. This document answers the four.
     reads, and is a design of its own.
 *   Changing the tools of the host's compaction request, which carries a session's whole tool
     list, `courier_spawn` included, as today.
-*   Deciding whether `native` stays as a per-spawn choice, or whether the typed-text copy stays.
-    "The two decisions that are open elsewhere" says how this design reads in each case.
+*   Deciding whether `native` stays as a per-spawn choice. "The decision that is open elsewhere"
+    says how this design reads in each case.
+*   Changing the typed-text copy, which stays as it is.
 *   A second mechanism. The rule uses the statement that hides `courier_spawn` today.
 
 ## Open Questions
@@ -343,18 +344,20 @@ transcript can hold calls to a tool its list does not have. That is so today for
 *   **A person loses** nothing. The tree panel, the footer, `/asks` and what the top session is
     told are unchanged.
 
-### The two decisions that are open elsewhere
+### The decision that is open elsewhere
 
-*   **Whether `native` stays as a per-spawn choice.** A native child has an entry in the tree and
-    a depth like any other child, so the rule applies to it by its depth in both cases. If
-    `native` goes, the sentence on the host's turn-end message goes with it, and that sentence
-    reaches only parents. The fifth role, an OpenCode subagent in a tree, comes from the host's
-    own `subagent` tool and exists in both cases.
-*   **Whether the typed-text copy stays.** The copy goes to the sessions above the one typed
-    into, and names no tool. A session that cannot start sessions has nothing below it and
-    receives none. If the copy goes and a child is told to send typed text up itself, it does so
-    with `courier_send`, which every role is offered. The rule and its tables read the same in
-    both cases.
+Whether `native` stays as a per-spawn choice is not decided here. The rule and its tables read
+the same in both cases:
+
+*   **With `native`.** A native child has an entry in the tree and a depth like any other child,
+    so the rule applies to it by its depth. The sentence on the host's turn-end message reaches
+    only a parent with a native child, which is offered every tool the sentence names.
+*   **Without `native`.** That sentence goes, and nothing else in this design moves. The fifth
+    role, an OpenCode subagent in a tree, comes from the host's own `subagent` tool and exists
+    in both cases.
+
+The typed-text copy stays as it is. It goes to the sessions above the one typed into and names
+no tool, and a session that cannot start sessions has nothing below it, so it receives none.
 
 ## Risks and Mitigations
 

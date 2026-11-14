@@ -295,9 +295,9 @@ describe("the scheduler", () => {
     for (const leave of leaves) leave()
   })
 
-  test("delivers a due message at each tick, and at once when nudged", async () => {
+  test("delivers a due message at each tick", async () => {
     const { timers, fire } = fakeTimers()
-    const { join: joinHub, nudge } = open({}, jobs, timers)
+    const { join: joinHub } = open({}, jobs, timers)
     const store = new Map<string, unknown>()
     const delivered: string[] = []
     const leave = joinHub(member("/a", () => {}, laterPorts("/a", store, delivered)))
@@ -305,7 +305,7 @@ describe("the scheduler", () => {
     expect(delivered).toEqual([])
 
     store.set("later/later_1", due("later_1"))
-    nudge()
+    fire()
     await settle()
     expect(delivered).toEqual(["/a later_1"])
     expect([...store.keys()]).toEqual([OWNER_KEY])
@@ -315,42 +315,6 @@ describe("the scheduler", () => {
     await settle()
     expect(delivered).toEqual(["/a later_1", "/a later_2"])
     leave()
-  })
-
-  test("a nudge during a tick runs another once it has ended, so what fell due meanwhile is not left to the next tick", async () => {
-    const { timers } = fakeTimers()
-    const { join: joinHub, nudge } = open({}, jobs, timers)
-    const store = new Map<string, unknown>()
-    const delivered: string[] = []
-    const later = laterPorts("/a", store, delivered)
-    let release = () => {}
-    let scans = 0
-    const scan = later.storage.scan
-    ;(later.storage as any).scan = async (input: { prefix: string }) => {
-      if (input.prefix === "later/" && ++scans === 1) await new Promise<void>((resolve) => (release = resolve))
-      return scan(input)
-    }
-    const leave = joinHub(member("/a", () => {}, later))
-    await settle()
-    expect(scans).toBe(1)
-    store.set("later/later_1", due("later_1"))
-    nudge()
-    await settle()
-    expect(delivered).toEqual([])
-    release()
-    await settle()
-    await settle()
-
-    expect(delivered).toEqual(["/a later_1"])
-    expect(scans).toBe(2)
-    leave()
-  })
-
-  test("a nudge while no instance is loaded does nothing", () => {
-    const { timers, started } = fakeTimers()
-    const { nudge } = open({}, jobs, timers)
-    nudge()
-    expect(started).toEqual([])
   })
 
   test("hands the loop over to the next instance when the one it runs through leaves", async () => {

@@ -637,7 +637,7 @@ describe("admit, with children that owe a report", () => {
       admitted.push((await admit(ports, "ses_root")).depth)
       return { id: "msg_report" }
     }
-    const sending = { ...ports, now: () => 200, nudge: () => undefined, log: () => undefined, session: { ...ports.session, synthetic } }
+    const sending = { ...ports, now: () => 200, log: () => undefined, session: { ...ports.session, synthetic } }
 
     await send(sending as unknown as CourierPorts, "ses_a", { sessionID: "ses_root", message: "done", status: "done" })
 
@@ -717,7 +717,7 @@ describe("admit, with children that owe a report", () => {
     await child("ses_root", "ses_a")
     await childStore(storage).prompted("ses_a", 100)
     await childStore(storage).settled("ses_a", "report", 150)
-    const sending = { ...ports, now: () => 200, nudge: () => undefined, log: () => undefined, session: { ...ports.session, synthetic: async () => ({ id: "msg_more" }) } }
+    const sending = { ...ports, now: () => 200, log: () => undefined, session: { ...ports.session, synthetic: async () => ({ id: "msg_more" }) } }
 
     await send(sending as unknown as CourierPorts, "ses_root", { sessionID: "ses_a", message: "more" })
 
@@ -731,7 +731,7 @@ describe("admit, with children that owe a report", () => {
     await childStore(storage).prompted("ses_a", 100)
     await childStore(storage).settled("ses_a", "report", 150)
     const context = async () => [{ id: "msg_more", type: "user" }, { id: "msg_idle", type: "idle" }]
-    const sending = { ...ports, now: () => 200, nudge: () => undefined, log: () => undefined, session: { ...ports.session, context, synthetic: async () => ({ id: "msg_more" }) } }
+    const sending = { ...ports, now: () => 200, log: () => undefined, session: { ...ports.session, context, synthetic: async () => ({ id: "msg_more" }) } }
 
     await send(sending as unknown as CourierPorts, "ses_root", { sessionID: "ses_a", message: "more" })
 

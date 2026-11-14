@@ -16,7 +16,6 @@ export type EventType = NonNullable<NonNullable<Parameters<EventPorts["event"]["
 export interface EventModule<P extends EventPorts> {
   readonly types?: readonly EventType[]
   readonly handle?: (ports: P, event: HostEvent) => Promise<unknown> | undefined
-  readonly after?: (ports: P, event: HostEvent) => Promise<void> | undefined
   readonly followed?: () => (() => void) | undefined
   readonly subscribed?: (ports: P) => Promise<void>
   readonly left?: () => void
@@ -70,16 +69,9 @@ export function typesOf(modules: readonly EventModule<never>[]): EventType[] | u
 }
 
 async function handle<P extends EventPorts>(ports: P, modules: readonly EventModule<P>[], event: HostEvent) {
-  try {
-    for (const module of modules) {
-      const handling = module.handle?.(ports, event)
-      if (handling) await handling
-    }
-  } finally {
-    for (const module of modules) {
-      const after = module.after?.(ports, event)
-      if (after) await after
-    }
+  for (const module of modules) {
+    const handling = module.handle?.(ports, event)
+    if (handling) await handling
   }
 }
 

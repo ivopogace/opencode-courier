@@ -48,7 +48,7 @@ race on gets keys of its own, one writer each. `test/store.test.ts` pins the tre
 
 | Key | Holds |
 |---|---|
-| `roster/<parentID>/<sessionID>` | A child's entry: title, directory, `isolated` (with `source`, `project` and `base` commit), `createdAt`, `reports: "status"`, `group`, `native`, `model` (`provider/model#variant`, when not its parent's). |
+| `roster/<parentID>/<sessionID>` | A child's entry: title, directory, `isolated` (with `source`, `project` and `base` commit), `createdAt`, `reports: "status"`, `native`, `model` (`provider/model#variant`, when not its parent's). |
 | `roster-by-child/<sessionID>` | `{ ancestors }`, parent first, top last. Only an index: `roster/` confirms a hit. |
 | `report/<sessionID>/prompt` | `{ at }`: when a prompt last reached the session. |
 | `report/<sessionID>/settled` | `{ at, by, status, resumesAt }`: when it last reported, failed or was interrupted; `resumesAt` only for a failed turn whose provider limit gave a retry time, the event's `created` plus `retryAfterMs`. |
@@ -56,7 +56,6 @@ race on gets keys of its own, one writer each. `test/store.test.ts` pins the tre
 | `report/<sessionID>/told` | `{ at }`: when its parent was last told of a silent end. |
 | `report/<sessionID>/stopped` | `{ at }`: when `courier_stop` stopped it. |
 | `report/<sessionID>/nudged` | `{ at, inboxID }`: when it was last reminded to report, and the reminder's inbox id, whose delivery is not noted as a prompt. One reminder while `nudged` is no earlier than `prompt`. |
-| `group/<parentID>/<name>/<sessionID>` | A member: title, `joinedAt`, its held report, or `left: { at, by }`. |
 | `later/<id>` | A pending `courier_later` message. |
 | `question/<requestID>` | A relayed question, until answered (the 100 newest). |
 | `typed/<sessionID>/<inboxID>` | `{ at, text }`: a `user` item typed into a spawned session, from its enqueue until its fan-up is sent or skipped. |
@@ -64,8 +63,10 @@ race on gets keys of its own, one writer each. `test/store.test.ts` pins the tre
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers. |
 
 Releases up to 0.13.8 also wrote `webhook/<topic>/<sessionID>`, a webhook subscription, and releases
-up to 0.16.4 wrote `memory/<projectID>/<topSessionID>` with its `pin` and `reads/`, a tree's record.
-Nothing reads those keys now, and none is written again.
+up to 0.16.4 wrote `memory/<projectID>/<topSessionID>` with its `pin` and `reads/`, a tree's record,
+and `group/<parentID>/<name>/<sessionID>`, a join group's member with the report held for it, beside
+a `group` field on that member's roster entry. Nothing reads those keys or that field now, and none
+is written again.
 
 A session owes a report while `prompt` is later than `settled`. Its parent waits on it while
 `prompt` is later than `told` too. The prompt's time is the event's `created`; the report's is the
@@ -133,7 +134,7 @@ flag on to cover `CHILD_RULES`.
 
 OpenCode runs one plugin instance per location, all in one process. After an update it loads the
 new copy next to the old one until the old one unloads. All instances share one hub
-(`opencode-courier.hub` on `globalThis`), where each scheduled message, released group, event,
+(`opencode-courier.hub` on `globalThis`), where each scheduled message, missed wake, event,
 request, form and question is claimed once before any instance acts on it. The hub runs one
 scheduler and follows events through two instances, both active, so an unload leaves no gap.
 Spawns under way, inbox item types and shown forms are process-wide under fixed keys of their own.

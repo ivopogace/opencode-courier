@@ -74,8 +74,7 @@ older host and branches on it. How the plugin itself answers a trap is in
   (after two continuations the turn fails as `output-limit`). The delivered message is stamped with
   the event's `created`. Only `session.inbox.enqueued` carries the item's type (`user`,
   `synthetic`, `compaction`, `move`), so the plugin remembers it until delivery. It also carries a
-  synthetic item's `payload.metadata`, which is how `notePrompt` tells a join group's release (the
-  `group` key) and a session's own check-in (`scheduled` with `from` the receiving session, and
+  synthetic item's `payload.metadata`, which is how `notePrompt` tells a session's own check-in (`scheduled` with `from` the receiving session, and
   `scheduledAt`, the time it was scheduled, to compare with its report) and a status-less message
   (only `source` and `from`, checked against the child store) from other courier messages; the `synthetic` call's returned id may arrive after the `delivered` event, so it is not
   used.
@@ -125,8 +124,7 @@ older host and branches on it. How the plugin itself answers a trap is in
   `updated > idle` holds both for an idle session renamed since and for one between two steps.
 - **`time.idle` is when the last turn ended**, stamped from `execution.succeeded`, `failed` and
   `interrupted`, but not from a shutdown (`projectIdle` in the projector). It is never cleared and
-  always moves forward, and it is in place by the time the plugin sees the turn's end. A join
-  group's release compares it with when its last member joined.
+  always moves forward, and it is in place by the time the plugin sees the turn's end.
 - **`time.busy`** (since 2.2.2) is the start of the latest execution, stamped by the projector on
   `session.execution.started` with `time.updated` left untouched; absent until a session's first
   execution. `busy` not later than `idle` is at rest since `idle`, whatever `updated` says. `busy`
@@ -188,9 +186,6 @@ and would go idle. Its name and shape may still change: a pin bump re-checks bot
   were working", `execution/restart.ts`), and the resumed execution stamps `time.busy` again. The
   plugin tells it from a real shutdown by the transcript ending on the aborted message (`endsIdle`,
   `wakeEnded`). A message steered in during the turn is then delivered at once in a turn of its own.
-  The group seal reads `time.idle`, which a decline does not stamp, so it also takes a transcript
-  ending on the aborted step, completed at or after the last join (`sealed`, `src/tree/group.ts`),
-  and the turn-end hook nudges the release on such a shutdown.
 - `permission.assert({ sessionID, action, resources, save?, metadata?, source?, agent? })`
   (`packages/core/src/permission.ts`) checks the session's rules and, on ask, creates a request in
   that session and waits. It resolves with nothing: the request's id and whether the person chose

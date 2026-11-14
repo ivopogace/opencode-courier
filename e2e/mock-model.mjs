@@ -445,9 +445,9 @@ function passFinding(messages, lastAssistant) {
     return { tool: "courier_send", args: { sessionID: briefedBy[1], message: heard ? `HEARD ${heard[0]}` : "HEARD NOTHING", status: "done" }, quick: true }
   }
   if (!first.includes("COURIER-FINDING")) return undefined
-  const last = messages.at(-1)
-  if (last?.role === "tool") {
-    const call = messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)
+  const answered = messages.slice(lastAssistant + 1).find((message) => message.role === "tool")
+  if (answered) {
+    const call = messages[lastAssistant]?.tool_calls?.find((item) => item.id === answered.tool_call_id)
     return { text: call?.function?.name === "courier_send" ? "PARENT PASSED ON" : "PARENT SPAWNED" }
   }
   if (lastAssistant === -1) return { calls: ["CHILD-FINDS", "CHILD-HEARS"].map((task) => ({ tool: "courier_spawn", args: { task } })) }
@@ -456,7 +456,7 @@ function passFinding(messages, lastAssistant) {
   if (found) {
     const started = messages.flatMap((message) => (message.role === "tool" ? [...textOf(message.content).matchAll(/Started session (ses_\w+)/g)] : []))
     const sibling = started.map((match) => match[1]).find((id) => id !== found[1])
-    return { tool: "courier_send", args: { sessionID: sibling, message: `Passed on from ${found[1]}: ${found[2]}` } }
+    return { tool: "courier_send", args: { sessionID: sibling, message: `Passed on from ${found[1]}: ${found[2]}` }, quick: true }
   }
   return { text: "PARENT WOKE" }
 }

@@ -5,7 +5,7 @@ import { join } from "node:path"
 
 const CHECKER = join(import.meta.dir, "..", "e2e", "real-model.mjs")
 const FIRST_TURN = "the parent ended its first turn after spawning, without waiting for the reports (one steered into it while it ran is delivered)"
-const POLL = "the parent did not poll its children (courier_children, courier_tree, sleep)"
+const POLL = "the parent did not poll its children (courier_tree, sleep)"
 const WOKE = "both reports reached the parent, each waking it or steered into its running turn, and got a reply"
 
 type Message = Record<string, unknown>
@@ -23,11 +23,13 @@ const tool = (name: string, input: unknown, metadata: unknown = {}) => ({ type: 
 const report = (from: string, text: string): Message => ({ type: "synthetic", text: `<courier from="${from}" status="done">\n${text}\n</courier>`, time: { created: tick() } })
 const child = (value: string) => [user("brief"), step("tool-calls", tool("shell", { command: `echo ${value}` }), tool("courier_send", { sessionID: "ses_parent", message: value, status: "done" })), step("stop", say("Reported.")), idle()]
 
-type Shape = "apart" | "apart-notices" | "steered" | "steered-look" | "look-first" | "look-before-spawn"
+type Shape = "apart" | "apart-notices" | "steered" | "steered-look" | "look-first" | "look-before-spawn" | "removed-tools"
 
 function parentOf(shape: Shape): Message[] {
   const spawns = step("tool-calls", tool("courier_spawn", { task: "a" }, { sessionID: "ses_a" }), tool("courier_spawn", { task: "b" }, { sessionID: "ses_b" }))
-  const look = step("tool-calls", tool("courier_children", {}))
+  const look = step("tool-calls", tool("courier_tree", {}))
+  if (shape === "removed-tools")
+    return [user("fan out"), spawns, step("tool-calls", tool("courier_children", {}), tool("courier_recall", {}), tool("courier_children", {})), step("stop", say("Both started.")), idle(), report("ses_a", "391"), step("stop", say("a is in.")), idle(), report("ses_b", "1024"), step("stop", say("RESULTS 391 1024")), idle()]
   if (shape === "apart-notices")
     return [user("fan out"), spawns, notice(), step("stop", say("Both started.")), idle(), notice(), report("ses_a", "391"), step("stop", say("a is in.")), idle(), notice(), report("ses_b", "1024"), step("stop", say("RESULTS 391 1024")), idle()]
   if (shape === "apart")
@@ -87,5 +89,10 @@ describe("the fan-out checker and a report that reaches the parent while its fir
   })
   test("a look before the first spawn is no poll", () => {
     expect(check("look-before-spawn").failed).toEqual([])
+  })
+  test("courier_children and courier_recall are tools the checker does not know: right after spawning they are no look and leave no note", () => {
+    const run = check("removed-tools")
+    expect(run.failed).toEqual([])
+    expect(run.notes.some((note) => /courier_children|courier_recall|group/.test(note))).toBe(false)
   })
 })

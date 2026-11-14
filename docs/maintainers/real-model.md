@@ -67,7 +67,7 @@ The fan-out and recursive prompts give each command as it is, with no `sleep` st
 A report that reaches a parent while its turn still runs is
 steered into that turn, and the checkers count it as delivered: the first turn may hold reports, and
 one look after each report, in a turn of its own or steered in, is not polling.
-A `courier_children` or `courier_tree` call before the session's first `courier_spawn` is not polling: there is
+A `courier_tree` call before the session's first `courier_spawn` is not polling: there is
 nothing to poll yet. One after the first spawn and before any report is, and a `sleep` keeps its own rule.
 
 ## The fan-out
@@ -79,8 +79,7 @@ The default. The parent is asked:
 > printed. Start them with courier_spawn and do not run the commands yourself. When both have reported back, reply with one line: RESULTS \<first\> \<second\>
 
 Eight checks: two children spawned; the first turn ended after spawning; no polling (a
-`courier_children`, `courier_tree` or `sleep` right after spawning, or more than one after a
-report); both children reported to the parent; both reports reached it, waking it or steered into
+`courier_tree` or `sleep` right after spawning, or more than one after a report); both children reported to the parent; both reports reached it, waking it or steered into
 its running turn, and got a reply; each carries a status and its answer; the reply holds both. The
 README's Quickstart prompt is a shorter wording with sleeps, which keep the children busy past the
 parent's first turn so that each report visibly wakes it: set `COURIER_PROMPT` to it.
@@ -143,15 +142,14 @@ child reported it; the reply holds it.
 
 The checker (`e2e/real-model-recursive.mjs`) reads every session reached from the root and makes
 nine checks: the root spawned two or more in its first turn and ended it, reports steered into it
-allowed; no orchestrator polled (the root's one `courier_recall` before its split is allowed, a
-sub-orchestrator's is not, and one look after each report); a
+allowed; no orchestrator polled (one look after each report is allowed); a
 child spawned two or more of its own in one turn, and no sub-orchestrator started exactly one without
 a tool call of its own before it (a heuristic for a verifier that starts one implementor: the
 transcript shows work, not what it was for); no
 session went past `maxDepth`; every session reported with a status; each sub-orchestrator reported
-once, after its children (a child whose report was sent but held in a group still counts, so one
-that reports in the turn that started its group passes); the files and the reply hold the values. Its notes say who loaded the skill
-and when, who used a group, a check-in or had a spawn refused.
+once, after its children (a child whose report was sent before the sub-orchestrator's own still
+counts, though it reached the sub-orchestrator after); the files and the reply hold the values. Its notes say who loaded the skill
+and when, who used a check-in or had a spawn refused.
 
 `e2e/real-model-prompt-open.txt` leaves the split to the root. With it, the "two or more children"
 checks fail by design when the root keeps a part, so read the split from the transcripts. The
@@ -178,8 +176,8 @@ The checker runs with `--fault` (recorded in `summary.json`, so `--saved` repeat
 checks, then four. The faulty session is found by its first non-`done` report: the fault reached a
 leaf; its parent messaged it after the leaf's first message that was not `done` and before reporting
 upward; it then reported `done`; its parent reported upward once, `done`. That first message is a
-report or a message without a status, counted from when the leaf sent it, so a parent that reads a
-report held in a group from its standing and answers before the group delivers it passes. "Session …
+report or a message without a status, counted from when the leaf sent it, so a parent that answers
+it before the report has reached it, from what `courier_tree` shows, passes. "Session …
 reported 2 times" is expected for it.
 
 ## A part with a core
@@ -358,18 +356,14 @@ run neither counts by its task: one that holds the wait is "a" or "b".
 
 Nine checks: the root spawned the three parts in its first turn; it ended that turn; it did not poll;
 every session reported with a status; a message or report from the "init" session holding the key
-reached the root (a report's finding delivered ahead of the held report is such a message), or the key came with another part's `blocked` report among the reports its group
-held, or the root read it with `courier_children` or `courier_tree` from a report still held; the
+reached the root, or the root read it with `courier_tree` before that message arrived; the
 root passed the key on to each other part without a status after that;
 each of those parts had it before it reported, and the root stopped no part and started none twice;
 the files hold `1999` and `2550`; the reply holds both. The notes say how the key came (without a
-status before the report, in the report, or by the root's own look), whether it came alone or in a
-join group's reports, and with how many parts yet to report; they quote what the root told each part.
-Three `finding:` notes, and the same under `finding` in `summary.json`, give what a batch counts:
-whether the "init" session put a finding on its report, with the key or without, and how many of
-the tree's reports carried one; the group the "init" session was started in, and whether the key
-reached the root before that group was complete; how many of the other parts had the key before
-they reported.
+status before the report, in the report, or by the root's own look), and with how many parts yet to
+report; they quote what the root told each part. A `finding:` note, and the same under `finding` in
+`summary.json`, give what a batch counts: whether the key reached the root, how many of the other
+parts had it before they reported, and how many turns the root took.
 
 The key is not out of a part's reach: the run's work directory, one level above the project, holds
 the server's log and OpenCode's own files, with the "init" session's shell output in them. The notes
@@ -421,7 +415,7 @@ where a command stands); its report reached the root before the final reply; no 
 every session reported with a status; the root ran the tests itself after the review's report; the
 files exist and the first holds the symbol (`COURIER_EXPECT`); the tests pass, `COURIER_TESTS` or
 more; the reply holds `REVIEWED` and that number. Its notes say, per session the root started, which
-stage it was, its agent, isolation and group; what the change made and committed; what the review
+stage it was, its agent and isolation; what the change made and committed; what the review
 read and ran and what it reported; what the root did after the review, itself or through sessions.
 
 ## Comparing conditions
@@ -450,8 +444,8 @@ bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory
 ```
 
 A label before `=` names the condition; several directories may share one. A path that is no run is
-skipped with a line on stderr. Each row has the verdict, the score, skill loads per depth, recalls,
-join groups, polled sessions, requests, the cache read tokens per request (the provider's prompt
+skipped with a line on stderr. Each row has the verdict, the score, skill loads per depth, polled
+sessions, requests, the cache read tokens per request (the provider's prompt
 cache hits over the whole tree, `-` for a summary written before they were kept), the uncached input
 tokens per request (what the provider read anew), the duration and
 the `split:` lines. A line under each table gives the means over its finished runs. The cache

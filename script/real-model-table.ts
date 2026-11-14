@@ -14,8 +14,6 @@ export type Run = {
   passed: number
   total: number
   skillLoads: Map<number, number>
-  recalls: number
-  groups: string[]
   polled: number
   requests: number
   cacheReads?: number
@@ -43,18 +41,13 @@ export function parseRun(dir: string): Run {
   const summary: Summary = JSON.parse(readFileSync(join(dir, "summary.json"), "utf8"))
   const checks = Object.values(summary.checks)
   const skillLoads = new Map<number, number>()
-  const groups = new Set<string>()
   const subSplits: string[] = []
-  let recalls = 0
   let polled = 0
   let rootSplit: string | undefined
   const subOrchestrators = new Set<string>()
   for (const note of summary.notes) {
     const started = note.match(new RegExp(`^${WHO} started \\d+ session`))
-    if (!started) continue
-    if (started[2]) subOrchestrators.add(started[2])
-    const grouped = note.match(/ in group\(s\) (.+?)(?:, \d+ isolated)?$/)
-    if (grouped) for (const name of grouped[1]!.split(", ")) groups.add(name)
+    if (started?.[2]) subOrchestrators.add(started[2])
   }
   for (const note of summary.notes) {
     const loaded = note.match(new RegExp(`^${WHO} loaded the skill\\(s\\): (.+)$`))
@@ -62,8 +55,6 @@ export function parseRun(dir: string): Run {
       const depth = depthOf(loaded[1]!, loaded[3])
       skillLoads.set(depth, (skillLoads.get(depth) ?? 0) + loaded[4]!.split(", ").length)
     }
-    const recalled = note.match(new RegExp(`^${WHO} called courier_recall (\\d+) time`))
-    if (recalled) recalls += Number(recalled[4])
     const poll = note.match(/^polled: (.+)$/)
     if (poll) polled = poll[1]!.split(", ").length
     const stated = note.match(new RegExp(`^${WHO} stated: (.+)$`))
@@ -79,8 +70,6 @@ export function parseRun(dir: string): Run {
     passed: checks.filter(Boolean).length,
     total: checks.length,
     skillLoads,
-    recalls,
-    groups: [...groups],
     polled,
     requests: summary.usage.requests,
     ...(summary.usage.cacheRead !== undefined && summary.usage.requests > 0 ? { cacheReads: summary.usage.cacheRead / summary.usage.requests } : {}),
@@ -103,8 +92,6 @@ export function conditionTable(condition: string, runs: readonly Run[]): string 
       run.verdict,
       `${run.passed}/${run.total}`,
       loadsOf(run.skillLoads),
-      String(run.recalls),
-      run.groups.length ? `${run.groups.length} (${run.groups.join(", ")})` : "0",
       String(run.polled),
       String(run.requests),
       run.cacheReads === undefined ? "-" : String(Math.round(run.cacheReads)),
@@ -118,8 +105,8 @@ export function conditionTable(condition: string, runs: readonly Run[]): string 
   return [
     `### ${condition}`,
     "",
-    "| Run | Verdict | Score | Skill loads | Recalls | Groups | Polled | Requests | Cache reads/request | Uncached input/request | Duration | Root split | Sub-orchestrator splits |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| Run | Verdict | Score | Skill loads | Polled | Requests | Cache reads/request | Uncached input/request | Duration | Root split | Sub-orchestrator splits |",
+    "|---|---|---|---|---|---|---|---|---|---|---|",
     ...rows.map((row) => `| ${row} |`),
     "",
     `${runs.length} run(s), ${finished.length} finished, ${finished.filter((run) => run.verdict === "pass").length} pass; mean score ${mean(finished.map((run) => run.passed))}/${mean(finished.map((run) => run.total))}, ` +

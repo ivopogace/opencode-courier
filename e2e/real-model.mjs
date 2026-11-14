@@ -8,7 +8,7 @@ const auth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD}`).t
 const work = process.env.WORK
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
-const LOOKS = new Set(["courier_children", "courier_tree"])
+const LOOK = "courier_tree"
 
 async function messages(sessionID) {
   if (saved) return JSON.parse(readFileSync(join(work, sessionID === parentID ? "parent.json" : `child-${sessionID}.json`), "utf8"))
@@ -71,13 +71,9 @@ function childOf(part) {
   return metadata.sessionID ?? metadata.metadata?.sessionID ?? contentText(part.state).match(/Started session (ses_\w+)/)?.[1]
 }
 const sendersOf = (message) =>
-  message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.[1].split(",") ?? []) : []
+  message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.slice(1) ?? []) : []
 const senderOf = (message) => sendersOf(message)[0]
-const groupOf = (message) => message.text?.match(/^<courier from="[^"]*" group="([^"]+)"/)?.[1]
-const statusOf = (message, from) =>
-  groupOf(message)
-    ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} ".*": (\\w+)$`, "m"))?.[1]
-    : message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
+const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
 const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
 const reporterOf = (message) => reportersOf(message)[0]
@@ -86,8 +82,6 @@ function deliveryOf(message) {
   const from = senderOf(message)
   if (!from) return message.type === "synthetic" ? "a message" : undefined
   if (scheduled(message)) return `a courier_later check-in from ${from}`
-  const group = groupOf(message)
-  if (group) return `the reports of group "${group}" from ${sendersOf(message).join(", ")}`
   return children.has(from) ? `the report from ${from}` : `a message from ${from}`
 }
 
@@ -155,10 +149,10 @@ const firstTools = toolsOf(first)
 const parentTools = toolsOf(parent)
 const spawned = [...children.keys()]
 const firstSpawn = parentTools.findIndex(childOf)
-const lookedBeforeSpawn = new Set(parentTools.slice(0, firstSpawn === -1 ? parentTools.length : firstSpawn).filter((part) => LOOKS.has(part.name)))
+const lookedBeforeSpawn = new Set(parentTools.slice(0, firstSpawn === -1 ? parentTools.length : firstSpawn).filter((part) => part.name === LOOK))
 const looksIn = (turn) =>
   toolsOf(turn).filter(
-    (part) => (LOOKS.has(part.name) && !lookedBeforeSpawn.has(part)) || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))),
+    (part) => (part.name === LOOK && !lookedBeforeSpawn.has(part)) || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))),
   ).length
 const segmentsOf = (turn) =>
   turn.reduce((segments, message, index) => {
@@ -184,7 +178,7 @@ const reports = turns.flatMap((turn, number) =>
       .map((from) => {
         const answered = turn.slice(position + 1).some((later) => later.type === "assistant" && !failed(later))
         const opened = turn.slice(0, position).every((earlier) => earlier.type === "synthetic")
-        return { from, turn: number + 1, answered, opened, text: message.text, status: statusOf(message, from), group: groupOf(message) }
+        return { from, turn: number + 1, answered, opened, text: message.text, status: statusOf(message) }
       }),
   ),
 )
@@ -198,7 +192,7 @@ const checks = [
     "the parent ended its first turn after spawning, without waiting for the reports (one steered into it while it ran is delivered)",
     firstTools.some(childOf) && ended(first.at(-1)) && !failed(first.at(-1)),
   ],
-  ["the parent did not poll its children (courier_children, courier_tree, sleep)", !polled],
+  ["the parent did not poll its children (courier_tree, sleep)", !polled],
   ["both children called courier_send to the parent", spawned.length >= 2 && spawned.every((id) => sends.get(id).length > 0)],
   [
     "both reports reached the parent, each waking it or steered into its running turn, and got a reply",
@@ -225,9 +219,7 @@ if (native.length) notes.push(`the parent also used OpenCode's own subagent tool
 const selfWorked = expected.filter((value) => firstText.includes(value))
 if (selfWorked.length) notes.push(`the parent's first turn already states ${selfWorked.join(", ")} (did it work them out itself?)`)
 for (const report of reports)
-  notes.push(`report from ${report.from}${report.group ? ` (in group "${report.group}")` : ""}: turn ${report.turn}, ${report.opened ? "woke the idle parent" : "steered into a running turn"}, ${report.status ? `status ${report.status}` : "no status"}`)
-const grouped = firstTools.filter((part) => childOf(part) && part.state.input?.group)
-if (grouped.length) notes.push(`the parent started ${grouped.length} child(ren) in a join group: ${[...new Set(grouped.map((part) => part.state.input.group))].join(", ")}`)
+  notes.push(`report from ${report.from}: turn ${report.turn}, ${report.opened ? "woke the idle parent" : "steered into a running turn"}, ${report.status ? `status ${report.status}` : "no status"}`)
 const checkIns = parentTools.filter((part) => part.name === "courier_later" && part.state.status === "completed").length
 const cancelled = parentTools.filter((part) => part.name === "courier_cancel" && part.state.status === "completed").length
 if (checkIns) notes.push(`the parent scheduled ${checkIns} courier_later check-in(s) and cancelled ${cancelled}`)

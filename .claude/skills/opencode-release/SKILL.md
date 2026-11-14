@@ -179,7 +179,8 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
      by merging `origin/main`.
 4. A changed model-facing string needs `e2e/real-model.sh` (CLAUDE.md). Its default free model
    refuses cloud sessions ([real-model.md](../../../docs/maintainers/real-model.md#running-it)):
-   there, run it only with a paid provider; otherwise it is owed.
+   there, run it only with a paid provider; otherwise it is owed. Its result is not put in a pull
+   request, an issue or a document.
 5. Review the pin PR and each follow-up PR this run handles and can push to (another branch's PR is
    named in the close-out for a session there, as "One branch, one PR" says) once it is ready
    for review, with `code-review:code-review <PR>` (the plugin `.claude/settings.json` enables),

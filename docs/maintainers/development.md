@@ -72,7 +72,9 @@ uv run script/render-gif.py demo-gif docs/demo.gif             # about 1 minute
 ```
 
 `record-gif.sh` drives the TUI in `tmux`, scene by scene, on `e2e/tui.sh`'s setup, with the helpers
-of `script/demo-lib.sh`. It needs tmux and what `e2e/tui.sh` needs. A scene whose screen does not
+of `script/demo-lib.sh`. It needs tmux and what `e2e/tui.sh` needs. It sets the TUI's session
+verbosity to `medium` in `cli.json`, so the transcript shows each tool call with its arguments, not
+a count of them. A scene whose screen does not
 come ends the run, printing that screen. It keeps tmux's own screens, about twelve a second, so the
 render needs no terminal emulator: `render-gif.py` draws them with Pillow and has ffmpeg encode the
 GIF; it needs ffmpeg, uv and `fc-match`. The scenario is `e2e/mock-model.mjs`'s

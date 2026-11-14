@@ -31,7 +31,6 @@ function fakePorts(messages: Record<string, Message[]> = {}) {
     },
     now: () => now,
     log: (message: string) => void logged.push(message),
-    nudge: () => undefined,
     permissions: () => [],
   }
   return {

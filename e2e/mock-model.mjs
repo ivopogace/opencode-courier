@@ -75,6 +75,8 @@ function decide(body) {
   if (finding) return finding
   const demo = demoTree(messages, lastAssistant)
   if (demo) return demo
+  const early = earlyMid(messages)
+  if (early) return early
   const role = roleEntry(messages, lastAssistant)
   if (role) return role
   const down = statusDown(messages, lastAssistant)
@@ -129,19 +131,7 @@ function decide(body) {
       const options = ["Hello", "Hi", "Hey"].map((label) => ({ label, description: `Say ${label}` }))
       return { tool: "question", args: { questions: [{ header: "Greeting", question: "Which greeting?", options, multiple: false }] }, delayed: true }
     }
-    if (call?.function?.name === "courier_spawn" && prompt.includes("COURIER-GROUP-SPLIT")) {
-      const spawned = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_spawn")
-      if (spawned.length < 2) return { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" }, delayed: true }
-      return { text: "PARENT SPAWNED BOTH", delayed: true }
-    }
     const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
-    if (call?.function?.name === "courier_spawn" && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-GROUPS"))
-      return { text: "MIDDLE SPAWNED", delayed: true }
-    if (startedBy && first.includes("CHILD-EARLY-MID")) {
-      if (call?.function?.name === "courier_spawn") return { tool: "shell", args: { command: "sleep 5" } }
-      if (call?.function?.name === "shell") return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MID DONE EARLY", status: "done" } }
-      if (call?.function?.name === "courier_send") return { text: "MID REPORTED EARLY" }
-    }
     if (startedBy && first.includes("CHILD-ROLLING-FIRST")) {
       if (call?.function?.name === "courier_send") return { tool: "shell", args: { command: "sleep 12" }, quick: true }
       if (call?.function?.name === "shell") return { text: "ROLLING FIRST FINISHED" }
@@ -215,10 +205,8 @@ function decide(body) {
   if (parent && recent.includes("CHILD-BLOCKED-STOP-MID")) return { tool: "courier_spawn", args: { task: "CHILD-BLOCKS" } }
   if (parent && recent.includes("CHILD-SILENT")) return { text: "CHILD SILENT REPLY", delayed: true }
   if (parent && recent.includes("CHILD-BLOCKS")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD BLOCKED", status: "blocked" } }
-  if (parent && recent.includes("CHILD-EARLY-MID"))
-    return { calls: [0, 1].map(() => ({ tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } })) }
-  if (parent && recent.includes("CHILD-GROUPS"))
-    return { calls: [0, 1].map(() => ({ tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } })) }
+  if (parent && recent.includes("CHILD-SENDS-FINDING"))
+    return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE WITH FINDING", status: "done", finding: "FINDING: the shared API returns cents, not euros" } }
   if (parent && recent.includes("CHILD-QUICK"))
     return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE QUICKLY", status: "done" }, quick: true }
   if (parent && recent.includes("CHILD-SENDS-QUEUED"))
@@ -290,11 +278,6 @@ function decide(body) {
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent) && !/<courier from="ses_\w+" status="/.test(recent)) return { text: "PARENT SETTLED" }
   if (!startedBy && recent.includes("ROLLING FIRST DONE")) return { tool: "courier_spawn", args: { task: "CHILD-ROLLING-NEXT" } }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
-  if (/<courier from="[^"]*" group="/.test(recent) && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-EARLY-MID"))
-    return { text: "MID SAW GROUP" }
-  if (/<courier from="[^"]*" group="/.test(recent) && startedBy)
-    return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MIDDLE GOT GROUP", status: "done" } }
-  if (/<courier from="[^"]*" group="/.test(recent)) return { text: "PARENT GOT GROUP" }
   if (/<courier from="ses_\w+" status="blocked">/.test(recent)) return { text: "PARENT BLOCKED" }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
   const nudge = recent.match(/COURIER-NUDGE(-PLAIN|-BLOCK)? (ses_\w+)/)
@@ -324,46 +307,30 @@ function decide(body) {
   if (recent.includes("COURIER-ROLLING")) return { tool: "courier_spawn", args: { task: "CHILD-ROLLING-FIRST" } }
   if (recent.includes("COURIER-OWN-CHECKIN")) return { tool: "courier_spawn", args: { task: "CHILD-CHECKIN-MID" } }
   if (recent.includes("COURIER-EARLY-REPORT")) return { tool: "courier_spawn", args: { task: "CHILD-EARLY-MID" } }
-  if (recent.includes("COURIER-GROUP-NESTED")) return { tool: "courier_spawn", args: { task: "CHILD-GROUPS" } }
-  if (recent.includes("COURIER-GROUP-SPLIT")) return { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } }
-  if (recent.includes("COURIER-GROUP-DROP"))
+  if (recent.includes("COURIER-OLD-PARAMETERS"))
     return {
       calls: [
-        { tool: "courier_spawn", args: { task: "Report back to your parent.", group: "pair" } },
-        { tool: "courier_spawn", args: { task: "CHILD-SILENT", group: "pair" } },
-      ],
-    }
-  if (recent.includes("COURIER-GROUP-DECLINE"))
-    return {
-      calls: [
-        { tool: "courier_spawn", args: { task: "Report back to your parent.", group: "pair" } },
-        { tool: "shell", args: { command: "echo courier-asks top" } },
+        { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } },
+        { tool: "courier_spawn", args: { task: "CHILD-SENDS-FINDING", group: "pair" } },
       ],
     }
   if (recent.includes("COURIER-MIXED"))
     return {
       calls: [
-        { tool: "courier_spawn", args: { task: "CHILD-ASKS", group: "pair", native: true } },
-        { tool: "courier_spawn", args: { task: "CHILD-ASKS", group: "pair", native: false } },
+        { tool: "courier_spawn", args: { task: "CHILD-ASKS", native: true } },
+        { tool: "courier_spawn", args: { task: "CHILD-ASKS", native: false } },
       ],
     }
   if (recent.includes("COURIER-NATIVE-ISOLATE")) return { tool: "courier_spawn", args: { task: "Report back to your parent.", native: true, isolate: true } }
   if (recent.includes("COURIER-TUI"))
     return {
       calls: [
-        { tool: "courier_spawn", args: { task: "Report back to your parent.", group: "pair" } },
-        { tool: "courier_spawn", args: { task: "CHILD-ASKS", group: "pair" } },
+        { tool: "courier_spawn", args: { task: "Report back to your parent." } },
+        { tool: "courier_spawn", args: { task: "CHILD-ASKS" } },
       ],
     }
   if (recent.includes("PARENT-BUSY")) return { tool: "shell", args: { command: "sleep 8" }, quick: true }
-  const group = recent.match(/COURIER-GROUP(-BLOCKED)?/)
-  if (group)
-    return {
-      calls: [
-        { tool: "courier_spawn", args: { task: "Report back to your parent.", group: "pair" } },
-        { tool: "courier_spawn", args: { task: group[1] ? "CHILD-BLOCKS" : "Report back to your parent.", group: "pair" } },
-      ],
-    }
+  if (recent.includes("COURIER-PAIR")) return { calls: [spawnChild(false), spawnChild(false)] }
   if (recent.includes("COURIER-DEPTH")) return { tool: "courier_spawn", args: { task: "CHILD-DEEPENS" } }
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
   if (recent.includes("COURIER-LIMIT")) return { tool: "courier_spawn", args: { task: "CHILD-LIMITED" } }
@@ -465,22 +432,6 @@ function passFinding(messages, lastAssistant) {
   const first = textOf(messages.find((message) => message.role === "user")?.content)
   const sent = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_send")
   const briefedBy = first.match(/You were started by session (ses_\w+)/)
-  if (briefedBy && first.includes("CHILD-REPORTS-FIRST")) {
-    if (sent.length) return { text: "FIRST REPORTED" }
-    return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FIRST DONE", status: "done" }, quick: true }
-  }
-  if (briefedBy && first.includes("CHILD-FINDS-LAST")) {
-    if (sent.length) return { text: "FINDER REPORTED" }
-    const told = messages.some((message) => textOf(message.content).includes("REPORT-NOW"))
-    const waited = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "shell").length
-    if (!told && waited < 30) return { tool: "shell", args: { command: "sleep 2" }, quick: true }
-    return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FINDER DONE", status: "done", finding: "FINDING: the shared API returns cents, not euros" }, quick: true }
-  }
-  if (briefedBy && first.includes("CHILD-FINDS-IN-REPORT")) {
-    if (sent.length === 0)
-      return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FINDER DONE", status: "done", finding: "FINDING: the shared API returns cents, not euros" } }
-    return { text: "FINDER REPORTED" }
-  }
   if (briefedBy && first.includes("CHILD-FINDS")) {
     if (sent.length === 0) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FINDING: the shared API returns cents, not euros" } }
     if (sent.length === 1) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FINDER DONE", status: "done" } }
@@ -499,19 +450,14 @@ function passFinding(messages, lastAssistant) {
     const call = messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)
     return { text: call?.function?.name === "courier_send" ? "PARENT PASSED ON" : "PARENT SPAWNED" }
   }
-  const tasks = first.includes("COURIER-FINDING-LAST")
-    ? ["CHILD-REPORTS-FIRST", "CHILD-FINDS-LAST"]
-    : [first.includes("COURIER-FINDING-IN-REPORT") ? "CHILD-FINDS-IN-REPORT" : "CHILD-FINDS", "CHILD-HEARS"]
-  if (lastAssistant === -1) return { calls: tasks.map((task) => ({ tool: "courier_spawn", args: { task, group: "finding" } })) }
+  if (lastAssistant === -1) return { calls: ["CHILD-FINDS", "CHILD-HEARS"].map((task) => ({ tool: "courier_spawn", args: { task } })) }
   const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
-  if (first.includes("COURIER-FINDING-LAST")) return { text: recent.includes(' group="') ? "PARENT GOT GROUP" : "PARENT WOKE" }
-  const found = recent.match(/<courier from="(ses_\w+)"(?: finding="ahead")?>\n(?:A finding from this session's report[^\n]*\n\n)?(FINDING:[^\n]*)/)
+  const found = recent.match(/<courier from="(ses_\w+)">\n(FINDING:[^\n]*)/)
   if (found) {
     const started = messages.flatMap((message) => (message.role === "tool" ? [...textOf(message.content).matchAll(/Started session (ses_\w+)/g)] : []))
     const sibling = started.map((match) => match[1]).find((id) => id !== found[1])
     return { tool: "courier_send", args: { sessionID: sibling, message: `Passed on from ${found[1]}: ${found[2]}` } }
   }
-  if (recent.includes(' group="')) return { text: "PARENT GOT GROUP" }
   return { text: "PARENT WOKE" }
 }
 
@@ -595,6 +541,17 @@ function demoTree(messages, lastAssistant) {
   if (called) return { text: "Two leads started, one per issue, in one group: I need only both results. I end my turn; the group's message will wake me." }
   if (recent.includes(' group="')) return { text: "Both issues fixed: #12 and #15, each with a test that failed before the fix." }
   return { calls: DEMO_LEADS.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task, group: "issues" } })) }
+}
+
+function earlyMid(messages) {
+  const first = textOf(messages.find((message) => message.role === "user")?.content)
+  const startedBy = first.match(/You were started by session (ses_\w+)/)
+  if (!startedBy || !first.includes("CHILD-EARLY-MID")) return undefined
+  const called = messages.flatMap((message) => message.tool_calls ?? []).map((item) => item.function?.name)
+  if (!called.includes("courier_spawn")) return { calls: [0, 1].map(() => ({ tool: "courier_spawn", args: { task: "CHILD-QUICK" } })) }
+  if (!called.includes("shell")) return { tool: "shell", args: { command: "sleep 5" } }
+  if (!called.includes("courier_send")) return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MID DONE EARLY", status: "done" } }
+  return undefined
 }
 
 function statusDown(messages, lastAssistant) {

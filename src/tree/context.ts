@@ -7,6 +7,8 @@ const ROLES_MAX = 1000
 
 const ROLE_LINE = new RegExp(`^${ROLE_PREFIX}`, "m")
 
+const HIDDEN_FROM_LEAF = ["courier_spawn", "courier_stop", "courier_cleanup"] as const
+
 export interface Shaped {
   readonly sessionID: string
   tools: Record<string, unknown>
@@ -17,7 +19,7 @@ export async function shapeContext(ports: ContextPorts, event: Shaped) {
   try {
     const { depth, entry, subagent, hostReports } = await roleOf(ports, event.sessionID)
     const leaf = subagent || (depth !== null && depth >= ports.limits.maxDepth)
-    if (leaf) delete event.tools.courier_spawn
+    if (leaf) for (const name of [...HIDDEN_FROM_LEAF, ...ports.hiddenFromLeaf]) delete event.tools[name]
     if (subagent || (depth === null && !event.tools.courier_spawn)) return
     if (entry || event.system.some((part) => ROLE_LINE.test(part.text))) return
     event.system.push({ type: "text", text: rolePart(depth, ports.limits, hostReports === true) })

@@ -52,9 +52,11 @@ async function answerRequest(ports: PersonToolPorts, callerID: string, input: ty
   })
 }
 
+export const ANSWER_TOOL = "courier_answer"
+
 export function addPersonTools(tools: ToolEditor, ports: PersonToolPorts) {
   tools.add({
-    name: "courier_answer",
+    name: ANSWER_TOOL,
     options: { codemode: false },
     description:
       "Pass on the answer to a permission request or a question that a session you started with courier_spawn (or " +
@@ -72,7 +74,7 @@ export function addPersonTools(tools: ToolEditor, ports: PersonToolPorts) {
       const call: AnswerCall = { messageID: context.messageID, callID: context.id }
       const result = await answerRequest(ports, context.sessionID, input, call).catch((error: unknown) => {
         if (isDeclined(error)) throw error
-        return rethrow("courier_answer")(error)
+        return rethrow(ANSWER_TOOL)(error)
       })
       return { content: answerText(result), metadata: result }
     },

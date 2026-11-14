@@ -1130,6 +1130,19 @@ describe("spawn", () => {
 
 describe("the context hook", () => {
   const tools = () => ({ courier_spawn: {}, courier_send: {}, read: {} })
+  const eight = () => ({
+    courier_spawn: {},
+    courier_send: {},
+    courier_tree: {},
+    courier_stop: {},
+    courier_cleanup: {},
+    courier_answer: {},
+    courier_later: {},
+    courier_cancel: {},
+    read: {},
+  })
+  const EIGHT = Object.keys(eight())
+  const FOUR = ["courier_send", "courier_tree", "courier_later", "courier_cancel", "read"]
 
   function contextPorts(limits = DEFAULT_LIMITS, entries?: Map<string, Map<string, unknown>>) {
     const { storage, child } = limitPorts(limits)
@@ -1140,12 +1153,13 @@ describe("the context hook", () => {
       storage,
       limits,
       roles: new Map(),
+      hiddenFromLeaf: ["courier_answer"],
       session: { get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, ...(parents.has(sessionID) ? { parentID: parents.get(sessionID) } : {}) }) } as any,
       ...(entries ? { instructions: fakeInstructions(entries, calls) as unknown as ContextPorts["instructions"] } : {}),
       log: (message) => void logged.push(message),
     }
-    const shape = async (sessionID: string, base = "base") => {
-      const event = { sessionID, tools: tools() as Record<string, unknown>, system: [{ type: "text" as const, text: base }] }
+    const shape = async (sessionID: string, base = "base", offered: () => Record<string, unknown> = tools) => {
+      const event = { sessionID, tools: offered(), system: [{ type: "text" as const, text: base }] }
       await shapeContext(ports, event)
       return event
     }
@@ -1234,12 +1248,12 @@ describe("the context hook", () => {
     await chainTo(child, 1)
     const copied = `AGENTS.md says so.\n\n<context key="${ROLE_KEY}">\n${rolePart(1, limits)}\n</context>`
 
-    const original = await shape("ses_d1", copied)
-    const fork = await shape("ses_fork", copied)
+    const original = await shape("ses_d1", copied, eight)
+    const fork = await shape("ses_fork", copied, eight)
     const compacted = await shape("ses_fork")
 
-    expect(original.tools.courier_spawn).toBeUndefined()
-    expect(fork.tools.courier_spawn).toBeDefined()
+    expect(Object.keys(original.tools)).toEqual(FOUR)
+    expect(Object.keys(fork.tools)).toEqual(EIGHT)
     expect(fork.system).toEqual(original.system)
     expect(compacted.system).toEqual([{ type: "text", text: "base" }, { type: "text", text: rolePart(null, limits) }])
     expect(calls).toEqual(["list ses_d1"])
@@ -1335,13 +1349,36 @@ describe("the context hook", () => {
     expect(refusal).not.toContain("end your turn")
   })
 
-  test("hides courier_spawn at maxDepth and keeps it above", async () => {
+  test("hides courier_spawn, courier_stop, courier_cleanup and courier_answer at maxDepth and keeps all eight above (#633)", async () => {
     const { shape, child } = contextPorts({ ...DEFAULT_LIMITS, maxDepth: 2 })
     await chainTo(child, 2)
 
-    expect(Object.keys((await shape("ses_d1")).tools)).toEqual(["courier_spawn", "courier_send", "read"])
-    expect(Object.keys((await shape("ses_d2")).tools)).toEqual(["courier_send", "read"])
-    expect(Object.keys((await shape("ses_root")).tools)).toEqual(["courier_spawn", "courier_send", "read"])
+    expect(Object.keys((await shape("ses_d1", "base", eight)).tools)).toEqual(EIGHT)
+    expect(Object.keys((await shape("ses_d2", "base", eight)).tools)).toEqual(FOUR)
+    expect(Object.keys((await shape("ses_root", "base", eight)).tools)).toEqual(EIGHT)
+    expect(Object.keys((await shape("ses_alone", "base", eight)).tools)).toEqual(EIGHT)
+  })
+
+  test("hides from a leaf the names the composition root passes, and only those beside the tree's own three (#633)", async () => {
+    const { ports, child } = contextPorts({ ...DEFAULT_LIMITS, maxDepth: 1 })
+    await chainTo(child, 1)
+    const shaped = async (hiddenFromLeaf: string[]) => {
+      const event = { sessionID: "ses_d1", tools: eight() as Record<string, unknown>, system: [{ type: "text" as const, text: "base" }] }
+      await shapeContext({ ...ports, hiddenFromLeaf }, event)
+      return Object.keys(event.tools)
+    }
+
+    expect(await shaped([])).toEqual(["courier_send", "courier_tree", "courier_answer", "courier_later", "courier_cancel", "read"])
+    expect(await shaped(["courier_answer", "read"])).toEqual(["courier_send", "courier_tree", "courier_later", "courier_cancel"])
+  })
+
+  test("leaves an OpenCode subagent in a tree the four tools of a leaf, and the session above it all eight (#633)", async () => {
+    const { shape, child, parents } = contextPorts()
+    await chainTo(child, 1)
+    parents.set("ses_sub", "ses_d1")
+
+    expect(Object.keys((await shape("ses_sub", "base", eight)).tools)).toEqual(FOUR)
+    expect(Object.keys((await shape("ses_d1", "base", eight)).tools)).toEqual(EIGHT)
   })
 
   test("remembers a depth, and finds a root's role once a spawn forgot it", async () => {

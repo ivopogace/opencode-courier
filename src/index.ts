@@ -9,6 +9,7 @@ import { builtVersions, versionNotice } from "./platform/version.js"
 import { addSchedulingTools, cancelScheduled, dueJob, isScheduled, type LaterPorts } from "./scheduling/index.js"
 import {
   addPersonTools,
+  ANSWER_TOOL,
   asksPermission,
   asksQuestion,
   formsShown,
@@ -151,7 +152,7 @@ export const courier = () => Plugin.define({
       .then(() => registerPersonRpc(ctx.rpc, { questions: questionPorts, permissions }))
       .catch((error: unknown) => log(`courier rpc: not registered, the TUI part shows nothing and cannot stop: ${String(error)}`))
     const instructions = (ctx.session as Partial<typeof ctx.session>).instructions
-    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, session: ctx.session, limits, roles, instructions, log }, event))
+    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, session: ctx.session, limits, roles, hiddenFromLeaf: [ANSWER_TOOL], instructions, log }, event))
 
     const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
     const leaveRelay = joinRelay(questionPorts)

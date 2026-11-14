@@ -757,28 +757,39 @@ run_permission() {
     "$(jq -r '.status == "completed" and .metadata.metadata.answered == false and (.output | contains("is pending in this OpenCode server") and contains("another OpenCode server on the same data directory"))' <<<"$answered")"
 }
 
+COURIER_TOOLS='[.tools[] | select(type == "string" and startswith("courier_"))]'
+LEAF_LIST='["courier_cancel", "courier_later", "courier_send", "courier_tree"]'
+LEAF_TOOLS="(($COURIER_TOOLS | sort) == $LEAF_LIST)"
+ALL_TOOLS="(($COURIER_TOOLS | length) == 8)"
 run_depth() {
-  scenario "a leaf at maxDepth does not see courier_spawn, and is refused when it calls it anyway"
+  scenario "a leaf at maxDepth sees four of the courier's tools, and is refused when it calls courier_spawn anyway"
   child_delay 1000
   out=$(prompt "COURIER-DEPTH")
   root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the leaf without the tool was told it is not available" \
     "$(has_text "$middle" "Tool is not available for this request: courier_spawn" 60)"
+  check "a leaf that called courier_stop was told it is not available either (#633)" \
+    "$(has_text "$middle" "Tool is not available for this request: courier_stop" 60)"
   check "the leaf that called it anyway was refused by courier_spawn, naming maxDepth" \
     "$(has_text "$middle" "Not started: this session is at depth 2 of its session tree, and the tree goes at most 2 deep (maxDepth)" 60)"
   leaves=$(jq -sc '[.[] | select(.reply.args.task? == "CHILD-TOO-DEEP") | .session] | unique' "$WORK/model.log")
   check "two leaves tried" "$(jq -r 'length == 2' <<<"$leaves")"
   check "the root was told once that the child in between ended without a report, once its leaves had reported" \
     "$(has_text "$root" "PARENT TOLD SILENT" 60 >/dev/null; turn_ended "$middle"; end_handled "$middle" "$root" && notices_with "$root" ended | jq -r --arg middle "$middle" 'length == 1 and (.[0] | contains("<courier from=\"" + $middle + "\" ended="))' || echo false)"
-  check "every request of a leaf was named a leaf, and the courier's hook left it no courier_spawn" \
+  check "every request of a leaf was named a leaf, and the courier's hook left it courier_send, courier_tree, courier_later and courier_cancel alone (#633)" \
     "$(jq -sr --argjson leaves "$leaves" '[.[] | select(.type == "probe.context" and (.sessionID | IN($leaves[])))]
-      | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_send")))' "$WORK/probe.log")"
+      | length > 0 and all(.role == "leaf" and '"$LEAF_TOOLS"')' "$WORK/probe.log")"
+  check "the model saw those four in every request of a leaf, and courier_spawn beside them only where the probe put it back (#633)" \
+    "$(jq -sr --argjson leaves "$leaves" '[.[] | select((.session | IN($leaves[])) and (.tools | length > 0))]
+      | length > 0 and all(('"$COURIER_TOOLS"' - ["courier_spawn"] | sort) == '"$LEAF_LIST"')' "$WORK/model.log")"
   check "the model saw no courier_spawn in a leaf's tool list unless the probe put it back" \
     "$(jq -sr --argjson leaves "$leaves" '[.[] | select((.session | IN($leaves[])) and (.tools | length > 0))] | group_by(.session)
       | map(any(.tools | index("courier_spawn"))) | sort == [false, true]' "$WORK/model.log")"
-  check "the child in between is a sub-orchestrator, with courier_spawn" \
-    "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
+  check "the child in between is a sub-orchestrator, with all eight tools" \
+    "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")) and '"$ALL_TOOLS"')' "$WORK/model.log")"
+  check "the root had all eight tools on every request, before its first spawn and after (#633)" \
+    "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0))] | length > 1 and all('"$ALL_TOOLS"')' "$WORK/model.log")"
   check "the root was pointed to the skill until it had started a child, then named root orchestrator" \
     "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | index("root orchestrator") as $i
       | $i > 0 and (.[:$i] | all(. == "root")) and (.[$i:] | all(. == "root orchestrator"))' "$WORK/model.log")"
@@ -817,9 +828,9 @@ run_role_entry() {
   check "every request of the middle session and the leaf carried the role in the entry's block, none in a part of the hook's" \
     "$(jq -sr --arg mid "$role_mid" --arg leaf "$role_leaf" '[.[] | select((.session == $mid or .session == $leaf) and (.tools | length > 0))]
       | length >= 3 and all(.roleEntry and (.rolePart | not))' "$WORK/model.log")"
-  check "every request of the leaf named it a leaf, without courier_spawn, and the hook saw the role too" \
+  check "every request of the leaf named it a leaf, with four of the courier's tools, and the hook saw the role too" \
     "$(jq -sr --arg leaf "$role_leaf" '[.[] | select(.session == $leaf and (.tools | length > 0))]
-      | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_send")))' "$WORK/model.log" |
+      | length > 0 and all(.role == "leaf" and '"$LEAF_TOOLS"')' "$WORK/model.log" |
       grep -qx true && jq -sr --arg leaf "$role_leaf" '[.[] | select(.type == "probe.context" and .sessionID == $leaf)] | length > 0 and all(.role == "leaf")' "$WORK/probe.log" | grep -qx true && echo true || echo false)"
   check "the root was pointed to the skill in a part of the hook's until it had started a child, then named root orchestrator by its entry alone" \
     "$(jq -sr --arg root "$role_root" '[.[] | select(.session == $root and (.tools | length > 0))] | (map(.role) | index("root orchestrator")) as $i
@@ -832,9 +843,9 @@ run_role_entry() {
   check "the leaf's compaction completed" \
     "$(for _ in $(seq 1 60); do [ "$(api "session/$role_leaf/message" | jq -r '[.data[] | select(.type == "compaction" and .status == "completed")] | length > 0')" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
   prompt_in "$role_leaf" "CHILD-ROLE-AGAIN" >/dev/null
-  check "after the compaction the leaf still has its entry, and its request named it a leaf through the block, without courier_spawn" \
+  check "after the compaction the leaf still has its entry, and its request named it a leaf through the block, with the same four tools" \
     "$([[ $(role_entry_of "$role_leaf") == "opencode-courier role: leaf"* ]] && jq -sr --arg leaf "$role_leaf" '[.[] | select(.session == $leaf and (.tools | length > 0))]
-      | last | .role == "leaf" and .roleEntry and (.rolePart | not) and (.tools | index("courier_spawn") | not) and (.reply.text == "LEAF AGAIN")' "$WORK/model.log")"
+      | last | .role == "leaf" and .roleEntry and (.rolePart | not) and '"$LEAF_TOOLS"' and (.reply.text == "LEAF AGAIN")' "$WORK/model.log")"
 }
 
 fork_of() { api_post "session/$1/fork" '{}' | jq -r '(.data // .).id // empty'; }
@@ -886,12 +897,13 @@ run_fork() {
       [ "$(instruction_updates "$mid_fork" | jq -r '[.[] | select(contains("api/role"))] == ["Instructions updated: api/role, api/standing"]')" = true ] &&
       [ "$(instruction_updates "$fork_mid" | jq -r 'any(contains("api/role")) | not')" = true ] && echo true || echo false)"
   echo "  system prompt hashes: leaf $(system_hashes "$fork_leaf"), its fork $(system_hashes "$leaf_fork"); middle $(system_hashes "$fork_mid"), its fork $(system_hashes "$mid_fork")"
-  check "the leaf's fork answered as a top session: courier_spawn among its tools, no role part of the hook's, and the system prompt of the leaf byte for byte" \
+  check "the leaf's fork answered as a top session: all eight tools where the leaf had four, no role part of the hook's, and the system prompt of the leaf byte for byte" \
     "$(jq -sr --arg fork "$leaf_fork" '[.[] | select(.session == $fork and (.tools | length > 0))] | length > 0 and
-      all((.tools | index("courier_spawn")) and (.rolePart | not) and .roleEntry and .reply.text == "LEAF AGAIN")' "$WORK/model.log" | grep -qx true &&
+      all((.tools | index("courier_spawn")) and '"$ALL_TOOLS"' and (.rolePart | not) and .roleEntry and .reply.text == "LEAF AGAIN")' "$WORK/model.log" | grep -qx true &&
+      jq -sr --arg leaf "$fork_leaf" '[.[] | select(.session == $leaf and (.tools | length > 0))] | length > 0 and all('"$LEAF_TOOLS"')' "$WORK/model.log" | grep -qx true &&
       [ "$(system_hashes "$leaf_fork")" = "$(system_hashes "$fork_leaf")" ] && [ "$(system_hashes "$leaf_fork" | jq -r 'length')" = 1 ] && echo true || echo false)"
-  check "the middle session's fork answered too, with no role part of the hook's" \
-    "$(jq -sr --arg fork "$mid_fork" '[.[] | select(.session == $fork and (.tools | length > 0))] | length > 0 and all((.tools | index("courier_spawn")) and (.rolePart | not) and .reply.text == "LEAF AGAIN")' "$WORK/model.log")"
+  check "the middle session's fork answered too, with all eight tools and no role part of the hook's" \
+    "$(jq -sr --arg fork "$mid_fork" '[.[] | select(.session == $fork and (.tools | length > 0))] | length > 0 and all((.tools | index("courier_spawn")) and '"$ALL_TOOLS"' and (.rolePart | not) and .reply.text == "LEAF AGAIN")' "$WORK/model.log")"
   turn_ended "$leaf_fork"
   turn_ended "$mid_fork"
   check "the root, the middle session and the leaf got nothing from the forks, and the forks called no tool, so sent nothing with courier_send" \
@@ -1722,19 +1734,19 @@ run_subagent() {
 }
 
 run_subagent_role() {
-  scenario "an OpenCode subagent of a courier child gets no root role line and no courier_spawn (#463)"
+  scenario "an OpenCode subagent of a courier child gets no root role line and four of the courier's tools (#463, #633)"
   out=$(prompt "COURIER-SUBAGENT-NO-ROOT")
   root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child reported its subagent's answer to the root" "$(has_text "$root" "CHILD SAW" 60)"
   sub=$(jq -sr '[.[] | select(.reply.text? == "SUBAGENT NO ROOT DONE") | .session] | unique | .[0] // empty' "$WORK/model.log")
   check "the subagent was started by the child, through OpenCode's parentID" "$([ -n "$sub" ] && [ "$(session_info "$sub" | jq -r '.parentID')" = "$child" ] && echo true || echo false)"
-  check "every request of the subagent had no role line, no hook part, and no courier_spawn, but courier_send" \
+  check "every request of the subagent had no role line, no hook part, and courier_send, courier_tree, courier_later and courier_cancel alone of the courier's tools" \
     "$(jq -sr --arg sub "$sub" '[.[] | select(.session == $sub and (.tools | length > 0))]
-      | length > 0 and all(.role == null and (.rolePart | not) and (.roleEntry | not) and (.tools | index("courier_spawn") | not) and (.tools | index("courier_send")))' "$WORK/model.log" |
-      grep -qx true && jq -sr --arg sub "$sub" '[.[] | select(.type == "probe.context" and .sessionID == $sub)] | length > 0 and all(.role == null and (.tools | index("courier_spawn") | not))' "$WORK/probe.log" | grep -qx true && echo true || echo false)"
-  check "the child kept its role and courier_spawn" \
-    "$(jq -sr --arg child "$child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
+      | length > 0 and all(.role == null and (.rolePart | not) and (.roleEntry | not) and '"$LEAF_TOOLS"')' "$WORK/model.log" |
+      grep -qx true && jq -sr --arg sub "$sub" '[.[] | select(.type == "probe.context" and .sessionID == $sub)] | length > 0 and all(.role == null and '"$LEAF_TOOLS"')' "$WORK/probe.log" | grep -qx true && echo true || echo false)"
+  check "the child kept its role and all eight tools" \
+    "$(jq -sr --arg child "$child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")) and '"$ALL_TOOLS"')' "$WORK/model.log")"
 }
 
 run_archive() {

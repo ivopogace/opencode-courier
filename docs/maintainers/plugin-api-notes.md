@@ -25,7 +25,8 @@ older host and branches on it. How the plugin itself answers a trap is in
   pins it.
 - Tool schemas are converted once and shared across steps, so a `context` hook may delete tools from
   the map but must never edit a tool's schema in place. The runner waits for plugin reloads before
-  each step.
+  each step. A call to a tool deleted there gets `Tool is not available for this request: <name>` as
+  its result, and the turn goes on (`run_depth` in `e2e/run.sh`).
 - OpenCode renders every Effect tool schema closed (`onExcessProperty: "error"` in
   `packages/core/src/tool/runtime.ts`). `test/notices.test.ts` renders them the same way.
 - An undeclared key never reaches a tool: `tool-input-repair` (`packages/core/src/plugin/`) deletes
@@ -477,7 +478,7 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   the transcript replays from the compaction message, so the update message is no longer sent. A
   compaction's own model request carries the baseline too, so its model sees the block; it also
   carries the session's whole tool list and runs the `compaction` hook, not `context`, so a leaf's
-  compaction model sees `courier_spawn` (its prompt says to call no tool). The summary must hold a
+  compaction model sees all eight courier tools (its prompt says to call no tool). The summary must hold a
   line equal to one of the template's headings (`## Objective`, …): a reply without one is nudged
   once ("did not fill in the required summary template"), then the compaction fails
   (`session.compaction.failed`, no `ended`).
@@ -507,7 +508,7 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   The stale block stays in the fork's baseline until a compaction, so `context.ts` finds a role line
   there and pushes no part, and the request's system prompt and copied messages stay the original's.
   What does differ is the tool list of a fork of a leaf: with no roster entry it is a top session,
-  and `courier_spawn` is not hidden from it.
+  and none of the four tools `context.ts` hides from a leaf is hidden from it.
 - **Reading it.** `put`, `list` and `remove` need the session to exist (`Session.NotFoundError`) but
   boot no location. The request hooks' `messages` carry each stored message's `metadata`, for
   reading only (`SessionRequestMessage`); the `context` hook does not use it. The `context` hook reads nothing of the value: the text itself only shows in

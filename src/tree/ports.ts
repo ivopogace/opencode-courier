@@ -246,6 +246,7 @@ export interface ContextPorts {
   readonly storage: RosterStorage
   readonly limits: Limits
   readonly roles: Map<string, Role>
+  readonly hiddenFromLeaf: ReadonlyArray<string>
   readonly session: Pick<Context["session"], "get">
   readonly instructions?: Context["session"]["instructions"]
   readonly log: (message: string) => void

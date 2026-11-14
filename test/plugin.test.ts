@@ -330,14 +330,20 @@ test("registers them as direct tools, not code-mode ones only reachable through 
   for (const tool of tools.values()) expect(tool.options).toEqual({ codemode: false })
 })
 
-test("its context hook, with the limits from the options, hides courier_spawn from a child at maxDepth", async () => {
+const offered = (tools: Map<string, unknown>) => Object.fromEntries([...tools.keys()].map((name) => [name, {}]))
+
+test("its context hook, with the limits from the options, leaves a child at maxDepth four of the registered tools, and its parent all eight (#633)", async () => {
   const { tools, hooks } = await setUp({}, { maxDepth: 1 })
   await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
-  const event = { sessionID: "ses_child", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
+  const event = { sessionID: "ses_child", tools: offered(tools), system: [] as any[] }
+  const above = { sessionID: "ses_parent", tools: offered(tools), system: [] as any[] }
 
   await hooks.get("context")!(event)
+  await hooks.get("context")!(above)
 
-  expect(Object.keys(event.tools)).toEqual(["courier_send"])
+  expect(Object.keys(event.tools)).toEqual(["courier_send", "courier_tree", "courier_later", "courier_cancel"])
+  expect(Object.keys(above.tools)).toEqual([...tools.keys()])
+  expect(Object.keys(above.tools)).toHaveLength(8)
   expect(event.system).toEqual([{ type: "text", text: rolePart(1, { ...DEFAULT_LIMITS, maxDepth: 1 }) }])
   await expect(tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_child" })).rejects.toThrow(
     `courier_spawn failed: ${depthRefusal(1, 1)}`,
@@ -354,16 +360,16 @@ test("its context hook points a session nobody spawned, with no children, to the
   expect(event.system).toEqual([{ type: "text", text: rolePart(null, DEFAULT_LIMITS) }])
 })
 
-test("its context hook gives an OpenCode subagent of a courier child no role part and no courier_spawn", async () => {
+test("its context hook gives an OpenCode subagent of a courier child no role part and the four tools of a leaf (#633)", async () => {
   const { tools, hooks, session } = await setUp()
   await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
   const get = session.get
   session.get = async (input: any) => ({ ...(await get(input)), ...(input.sessionID === "ses_sub" ? { parentID: "ses_child" } : {}) })
-  const event = { sessionID: "ses_sub", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
+  const event = { sessionID: "ses_sub", tools: offered(tools), system: [] as any[] }
 
   await hooks.get("context")!(event)
 
-  expect(Object.keys(event.tools)).toEqual(["courier_send"])
+  expect(Object.keys(event.tools)).toEqual(["courier_send", "courier_tree", "courier_later", "courier_cancel"])
   expect(event.system).toEqual([])
 })
 

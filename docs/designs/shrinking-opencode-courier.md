@@ -1,7 +1,7 @@
 # Shrinking opencode-courier
 
 *   **Author:** Ivo Pogace
-*   **Status:** Proposed
+*   **Status:** Implemented, released in 0.17.0
 *   **Date:** 2026-11-14
 
 --------------------------------------------------------------------------------

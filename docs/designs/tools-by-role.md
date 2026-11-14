@@ -43,9 +43,9 @@ Every request a session makes carries the name, description and input schema of 
 offered. A session that cannot start sessions has no children, so three of the seven courier
 tools it is offered can only fail for it, and their text is in each of its requests all the same.
 
-The saving had not been measured. It is now, under "The saving, measured". The idea also had
-three points open: which tools each role sees, which strings name a tool a role does not see, and
-what happens when a session's role changes. This document answers the four.
+The issue leaves four points open: which tools each role sees, which strings name a tool a role
+does not see, what happens when a session's role changes, and how large the saving is. This
+document answers the four; the measurement is under "The saving, measured".
 
 ## Goals
 
@@ -66,9 +66,9 @@ what happens when a session's role changes. This document answers the four.
     reads, and is a design of its own.
 *   Changing the tools of the host's compaction request, which carries a session's whole tool
     list, `courier_spawn` included, as today.
-*   Deciding whether `native` stays as a per-spawn choice. "The decision that is open elsewhere"
-    says how this design reads in each case.
-*   Changing the typed-text copy, which stays as it is.
+*   Changing `courier_cancel`, `native` as a per-spawn choice, or the typed-text copy. All three
+    stay as they are; "Native children and the typed-text copy" says how the rule meets the last
+    two.
 *   A second mechanism. The rule uses the statement that hides `courier_spawn` today.
 
 ## Open Questions
@@ -132,8 +132,10 @@ what happens when a session's role changes. This document answers the four.
 
 ### The rule per role
 
-A tool is hidden from a session when every call that session could make to it is refused, and
-that stays so for as long as the session keeps its place in the tree.
+`courier_stop`, `courier_cleanup` and `courier_answer` act on sessions the caller started, or on
+sessions under those. A session that cannot start sessions has none, so every call it could make
+to the three is refused, for as long as it keeps its place in the tree. They are hidden where
+`courier_spawn` is.
 
 | Tool | Top, nothing started | Top | Sub-orchestrator | Cannot start sessions |
 |---|---|---|---|---|
@@ -149,12 +151,14 @@ that stays so for as long as the session keeps its place in the tree.
 Why each hidden tool is of no use to a session that cannot start sessions, checked against the
 code:
 
-*   **`courier_spawn`** refuses a session at `maxDepth` with the depth refusal (`admit` in
-    `src/tree/limits.ts`). Hidden today.
-*   **`courier_stop`** takes a session that was started with `courier_spawn` and refuses a caller
-    that is not in the line of sessions that started it (`stop` in `src/tree/stop.ts`). A session
-    that cannot spawn is in no such line. It cannot name itself either, nor a subagent it
-    started with the host's tool: the target must have been started with `courier_spawn`.
+*   **`courier_spawn`** is hidden today. At `maxDepth` the tool itself refuses the call, with the
+    depth refusal (`admit` in `src/tree/limits.ts`). For an OpenCode subagent the tool has no
+    refusal: the hook hides it because a subagent answers its parent's tool call and starts no
+    tree of its own.
+*   **`courier_stop`** refuses a target that was not started with `courier_spawn`, and a caller
+    that is not in the line of sessions that started the target (`stop` in `src/tree/stop.ts`).
+    A session that cannot spawn is in no such line, its own included, and a subagent it started
+    with the host's tool was not started with `courier_spawn`.
 *   **`courier_cleanup`** takes a session the caller started itself and refuses any other
     (`cleanup` in `src/tree/cleanup.ts`). A session that cannot spawn started none.
 *   **`courier_answer`** refuses every caller but the top of the line of sessions that started
@@ -194,8 +198,9 @@ deletion.
 to `person/`, which `tree/` may not import, so the composition root passes that one name to the
 hook through its ports.
 
-A session's role is read once and kept in memory for the life of the plugin instance. That is
-unchanged.
+A role, once read, is kept in memory per plugin instance, for up to 1,000 sessions. A spawn
+drops or rewrites the kept role of the session that spawned, and the role of a subagent whose
+parent is in no tree is read on every request. That is unchanged.
 
 ### The saving, measured
 
@@ -242,8 +247,8 @@ Two things bound what the numbers are worth:
 
 *   **Who is in the role.** With the default `maxDepth` of 5, a tree has a session at the deepest
     level only when it is five levels deep. The sessions the saving reaches on default settings
-    are OpenCode subagents inside a tree; with `maxDepth` set to 1 or 2, every session at the
-    bottom of the tree. How many sessions that is in use is not known: the plugin has no usage
+    are OpenCode subagents inside a tree. With `maxDepth` set to 1, every child is in the role;
+    with 2, every child of a child. How many sessions that is in use is not known: the plugin has no usage
     data.
 *   **What a saved character costs.** The tool list is at the front of a request. On a provider
     with a prompt cache it is read at the cached price after a session's first request. On a
@@ -290,9 +295,12 @@ Strings that name a hidden tool and do not reach such a session:
 | The notes added to a question tool's result (`unlinkedNote`, `passedNote`, `withdrawnText`) | `courier_answer`, `courier_send` | The top session whose question call it was |
 | The fork notice (`forkNotice`) | `courier_send`, `courier_spawn`, `courier_tree` | The fork, a top session |
 
-One string reaches a session that cannot start sessions only when another plugin puts
-`courier_spawn` back into its tool map and the session calls it: the depth refusal, which names
-`courier_send`. The live suite's `depth` group does this with its probe plugin.
+One string reaches a session at the deepest level only when another plugin puts `courier_spawn`
+back into its tool map and the session calls it: the depth refusal, which names `courier_send`.
+The live suite's `depth` group does this with its probe plugin. An OpenCode subagent that got the
+tool back the same way would not be refused: `courier_spawn` reads the caller's depth from its
+entry in the tree, and a subagent has none. It would then be a session with a child of its own,
+which this design does not cover.
 
 The last table also answers open question 2 for strings: every string that names
 `courier_answer` goes to a top session or to the tool's caller, so hiding the tool from
@@ -312,12 +320,13 @@ moment at which a tool list changes. It adds none. Each moment below exists toda
 |---|---|---|
 | A top session's first spawn | The tool list stays. The role arrives as one instruction update. | The same. |
 | A sub-orchestrator's first child, or its first native child | The tool list stays. A native child adds one instruction update. | The same. |
-| A session at the deepest level, through its life | Seven tools on every request, from its first. Its depth is fixed when it is spawned. | Four tools on every request, from its first. |
+| A session at the deepest level, while every session above it keeps its entry in the tree | Seven tools on every request, from its first. | Four tools on every request, from its first. |
+| A session above one at the deepest level is dropped with `courier_cleanup`, or its entry expires | The line above the deepest one is cut there, so its depth reads smaller: it is a sub-orchestrator and gains `courier_spawn`, once its kept role is gone. | It gains four tools at once. |
 | A fork of a session at the deepest level | The fork is a top session: eight tools where the original has seven, so its first request is read without the cache. | Eight where the original has four. The same single uncached request. |
 | A fork of a sub-orchestrator or of a top session | Same tools as the original; the original's prefix holds as far as the host's own copy keeps it. | The same. |
 | `maxDepth` set lower or higher in the config, then a restart | A session whose depth is on the other side of the new limit gains or loses `courier_spawn`. Its role entry keeps the text it was spawned with. | It gains or loses four tools at once. |
 | A parent starts its first tree while a subagent of its own runs | The subagent was a top session with eight tools and becomes a subagent in a tree with seven. | Eight, then four. |
-| A parent drops a deepest-level child with `courier_cleanup` | The child has no entry in the tree and reads as a top session with nothing started, with eight tools, once the plugin instance that kept its role is gone. | The same. |
+| A parent drops a deepest-level child with `courier_cleanup` | Once its kept role is gone, a standalone child has no entry in the tree and reads as a top session with nothing started, with eight tools. A native child still has its host parent and reads as an OpenCode subagent in a tree, with seven. | Eight for a standalone child. Four for a native one, as before the drop. |
 | The host's compaction request | The whole tool list, `courier_spawn` included, since the host runs its `compaction` hook and not `context`. | The same: all eight. |
 | The role cannot be read (a storage error) | The request goes out with every tool, and one log line. | The same. |
 
@@ -344,20 +353,16 @@ transcript can hold calls to a tool its list does not have. That is so today for
 *   **A person loses** nothing. The tree panel, the footer, `/asks` and what the top session is
     told are unchanged.
 
-### The decision that is open elsewhere
+### Native children and the typed-text copy
 
-Whether `native` stays as a per-spawn choice is not decided here. The rule and its tables read
-the same in both cases:
-
-*   **With `native`.** A native child has an entry in the tree and a depth like any other child,
-    so the rule applies to it by its depth. The sentence on the host's turn-end message reaches
-    only a parent with a native child, which is offered every tool the sentence names.
-*   **Without `native`.** That sentence goes, and nothing else in this design moves. The fifth
-    role, an OpenCode subagent in a tree, comes from the host's own `subagent` tool and exists
-    in both cases.
-
-The typed-text copy stays as it is. It goes to the sessions above the one typed into and names
-no tool, and a session that cannot start sessions has nothing below it, so it receives none.
+*   **A native child** (`courier_spawn` with `native: true`) has an entry in the tree and a depth
+    like any other child, so the rule applies to it by its depth: at `maxDepth` it is offered the
+    four tools, above it all eight. It is not the fifth role. That role is a session the host's
+    own `subagent` tool started, which has no entry in the tree. The sentence on the host's
+    turn-end message reaches only a parent with a native child, which is offered every tool the
+    sentence names.
+*   **The typed-text copy** goes to the sessions above the one typed into and names no tool. A
+    session that cannot start sessions has nothing below it, so it receives none.
 
 ## Risks and Mitigations
 

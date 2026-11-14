@@ -509,7 +509,7 @@ function demoWorker(worker, messages, parent) {
 function demoLead(lead, messages, lastAssistant, parent) {
   const last = messages.at(-1)
   const call = last?.role === "tool" ? messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id) : undefined
-  if (call?.function?.name === "courier_spawn") return { text: "Two workers started, on the cause and on a failing test, in no group: each report wakes me as it comes. I end my turn." }
+  if (call?.function?.name === "courier_spawn") return { text: "Two workers started, on the cause and on a failing test: each report wakes me as it comes. I end my turn." }
   if (call?.function?.name === "courier_send")
     return { text: (call.function.arguments ?? "").includes(parent) ? "Reported to the orchestrator." : "Passed the finding on to the test worker, whose test needs it. I end my turn." }
   const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
@@ -531,16 +531,17 @@ function demoTree(messages, lastAssistant) {
   const first = textOf(messages.find((message) => message.role === "user")?.content)
   const last = messages.at(-1)
   const called = last?.role === "tool" ? messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)?.function?.name : undefined
-  const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
   const briefedBy = first.match(/You were started by session (ses_\w+)/)
   const lead = briefedBy && DEMO_LEADS.find((one) => first.includes(one.task))
   if (lead) return demoLead(lead, messages, lastAssistant, briefedBy[1])
   const worker = briefedBy && DEMO_LEADS.flatMap((one) => one.workers).find((one) => first.includes(one.task))
   if (worker) return demoWorker(worker, messages, briefedBy[1])
   if (briefedBy || !first.includes(DEMO_PROMPT)) return undefined
-  if (called) return { text: "Two leads started, one per issue, in one group: I need only both results. I end my turn; the group's message will wake me." }
-  if (recent.includes(' group="')) return { text: "Both issues fixed: #12 and #15, each with a test that failed before the fix." }
-  return { calls: DEMO_LEADS.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task, group: "issues" } })) }
+  if (called) return { text: "Two leads started, one per issue. I end my turn; each lead's report will wake me." }
+  const reported = new Set([...messages.map((message) => textOf(message.content)).join("\n").matchAll(/<courier from="(ses_\w+)" status="done"/g)].map((match) => match[1]))
+  if (reported.size === 1) return { text: "One lead reported; I wait for the other. I end my turn." }
+  if (reported.size >= DEMO_LEADS.length) return { text: "Both issues fixed: #12 and #15, each with a test that failed before the fix." }
+  return { calls: DEMO_LEADS.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task } })) }
 }
 
 function earlyMid(messages) {

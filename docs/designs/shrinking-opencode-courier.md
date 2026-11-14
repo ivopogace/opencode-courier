@@ -10,15 +10,96 @@
 
 opencode-courier is an OpenCode V2 plugin that lets one session start others, end its turn, and be
 woken when they report. It has grown to 11 model-facing tools, five server options, a terminal
-panel with four commands, a memory of earlier trees, scheduled messages, a relay for a child's
+part with a tree panel and four commands, a memory of earlier trees, scheduled messages, a relay for a child's
 permission requests and questions, and two kinds of child session.
 
-This design removes the parts that nobody is known to use or that a smaller mechanism already
-covers, and keeps the parts OpenCode 2.3.0 cannot do itself. The tool list goes from 11 to 7. The
-work is a series of small releases, each measured against a baseline taken before the first one.
+This design removes the parts that have no known user, that another part already covers, or
+that only serve a host older than the pinned one. The tool list goes from 11 to 8 and the options
+from five to three, in one breaking release, 0.17.0. It adds no feature. The plugin is pinned to OpenCode 2.3.0, and "the host" below means OpenCode.
 
-The plan adds one thing: a readable line in the parent's transcript when a standalone child
-reports, where a raw session id shows today.
+### The tools today
+
+| Tool | What it does | After this design |
+|---|---|---|
+| `courier_spawn` | Starts a child session on a task and returns at once. | Kept |
+| `courier_send` | Sends a message to a session and wakes it if it is idle. With a status it is a child's report to the session that started it. | Kept |
+| `courier_tree` | Lists every session under a session, with each one's state. | Kept |
+| `courier_children` | Lists only the sessions a session started itself. | Removed |
+| `courier_stop` | Stops a session and everything under it. | Kept |
+| `courier_cleanup` | Removes an isolated child's git worktree and forgets the child. | Kept |
+| `courier_answer` | Lets the top session propose an answer to a child's permission request, or pass on the person's answer to a child's question. | Kept |
+| `courier_later` | Schedules a message for a session at a later time. | Kept |
+| `courier_cancel` | Drops a scheduled message. | Kept |
+| `courier_recall` | Reads what earlier trees in the project did. | Removed |
+| `courier_note` | Writes a one-line lesson about the current tree. | Removed |
+
+### Terms used here
+
+*   **Tree, parent, child, top session.** A session that starts others is their parent; the
+    sessions it starts are its children. The whole set is a tree, and the session the person
+    started is its top.
+*   **Report and status.** A child's `courier_send` to its parent with one of four statuses:
+    `done`, `partial`, `blocked` or `failed`. A message without a status is progress.
+*   **Wake.** A message that starts a new turn in an idle session. A wake is *missed* when the
+    message arrives and no turn starts; the plugin sends it once more and then marks the session
+    `stalled`.
+*   **Brief and role line.** The brief is the text a child gets with its task: who started it and
+    how to report. The role line is the part of a session's instructions that says what it is in
+    the tree and what it may start.
+*   **State lines.** One line per child in a parent's instructions, giving that child's state,
+    kept current so the parent need not call a listing tool.
+*   **Instruction entry.** A named piece of text the plugin attaches to a session's system
+    prompt through the host. The host interface for this is called the instructions port below;
+    it exists from OpenCode 2.2.0 on. Where an entry cannot be used, the plugin adds the same
+    text to each request as a system part, through a hook that runs before every request. That
+    is the fallback path: it serves a session whose entry could not be written, a fork, and a
+    top session before its first spawn.
+*   **Roster.** The stored list of each session's children.
+*   **Notice.** A message the plugin itself sends to a session, for example that a child failed
+    or ended without a report.
+*   **Reminder.** When a child is about to end its turn without having reported, the plugin
+    reminds it once, in the same turn. If it still does not report, its parent gets a notice. The
+    code calls this the nudge. Together with the missed-wake retry and `stalled`, these are the
+    liveness rules: how the plugin notices that a session went quiet.
+*   **The `courier-orchestrate` skill.** A text the plugin offers to every session through
+    OpenCode's skill list. It tells a model when to split a task and how to check and merge the
+    parts. A real-model run can deny it, to see what a model does without it.
+*   **Isolated child.** A child started with `isolate: true`. It runs in a git worktree and on a
+    branch of its own.
+*   **Standalone and native children.** A standalone child is an ordinary top-level OpenCode
+    session that the plugin tracks as a child. A native child is created with the parent's id as
+    its host-level parent, which makes it a subagent in OpenCode's own terms: OpenCode lists it
+    under the parent, shows its permission prompts in the parent's view, and writes its own
+    message into the parent when the child's turn ends. An isolated child cannot be native. The
+    `nativeChildren` option makes every non-isolated child native unless its spawn says
+    otherwise; it is off by default. OpenCode also has a `subagent` tool of its own, which a
+    model calls directly and which the plugin does not control.
+*   **Join group.** Children started with the same `group` name. A member's report is *held*
+    in storage and not delivered when it is sent. Once every member has reported and the
+    parent's turn has ended, the group is *released*: the parent gets all the reports in one
+    message and one wake.
+*   **`finding`.** A parameter of a report: a sentence or two that other parts of the job need.
+    Inside a group it is delivered to the parent at once, ahead of the held report.
+*   **Memory.** After a tree finishes, the plugin stores a record of it for the project: its
+    parts, their outcomes and cost. `courier_recall` reads those records in a later tree,
+    `courier_note` adds a one-line lesson to the current tree's record, and the `lessons`
+    instruction entry puts the project's lessons into the prompt of each session that may start
+    others. `/courier memory` shows the records in the terminal.
+*   **Check-in.** A message a session schedules for itself with `courier_later`, to look at its
+    children again in case their reports never come.
+*   **Typed-text copy.** When the person types into a child's own session, the plugin sends a
+    copy of the text to each session above that child.
+*   **Fork notice.** A message to a session that was forked from one in a tree, saying that the
+    children it reads about belong to the original.
+*   **Footer, tree panel, `/asks`.** The terminal part: a one-line summary under the prompt, a
+    panel that draws the tree (`/courier tree`), and a dialog of every permission request and
+    question waiting on the person.
+*   **Hub and tick.** OpenCode loads one copy of the plugin per project folder, and after an
+    update an old and a new copy side by side. The hub is the state they share in one process.
+    The tick is the hub's timer, every 15 seconds, which runs the periodic jobs.
+*   **Scripted model and real model.** The live test suite runs against a mock model that
+    replies from a script. The real-model checks run ten scenarios against an actual model and
+    score each run with a checker.
 
 ## The Problem
 
@@ -27,81 +108,96 @@ Four costs grow with the plugin's size.
 1. **Each OpenCode release costs work.** The plugin is pinned to one host version. Every bump
    means re-checking each behaviour that rests on something the host does not promise. The file
    that tracks those behaviours, `docs/maintainers/plugin-api-notes.md`, has 692 lines.
-2. **Models see too much.** Every session gets 11 tool descriptions and schemas, a skill, a role
-   line and per-child state lines. A weaker model has more to misread, and every request pays for
-   the text. In the real-model checks, a call to a listing tool after a spawn already counts as a
-   failure, yet two listing tools are offered.
+2. **Every request carries text for features the session may not use.** A session that may
+   start others gets 11 tool descriptions and schemas and a role line on every request, and a
+   parent also gets one state line per child. A session at the deepest level gets eight of the
+   tools. Every session is offered the skill and pays for its text once it loads it. In the real-model checks, a call to a listing tool after a spawn
+   already counts as a failure, yet two listing tools are offered.
 3. **Parts of it duplicate each other.** `courier_children` returns a subset of `courier_tree`.
-   `/courier stop` does what the `s` key in the panel does. The `finding` field exists only to get
-   past a held group report. Text typed into a child is copied up the tree, though the child can
-   send it up itself when asked.
-4. **It is hard to explain.** The README needs five claims to say what the plugin is for, and one
-   of them describes the host's `subagent` tool as it was, not as it is in 2.3.0.
+   `/courier stop` does what the `s` key in the panel does. Outside a join group, the `finding`
+   parameter does what a message without a status already does; inside one, it exists to get
+   past the held report.
+4. **The README has more to list, and one part of it is out of date.** It lists five options, 11
+   tools and four terminal commands (`/courier tree`, `/courier stop`, `/courier memory` and
+   `/asks`), and its account of the host's `subagent` tool describes that tool as it was, not as
+   it is in 2.3.0.
 
-No usage data exists for any feature. The only evidence is what the owner uses, what the scripted
-and real-model scenarios exercise, and what the repository's issues show. Memory, join groups and
-the `nativeChildren` option have none of the three from anyone but the owner's own tests.
+This design addresses the second, third and fourth costs, and only a small part of the first.
+The longest section of that notes file is the one on native children, which stay here (see
+Non-Goals).
 
-The first idea was to replace courier's spawn and wake with OpenCode's own subagents. That does
-not work: OpenCode creates a session with its own directory or with a parent, never both, so a
-child in its own git worktree cannot be a host subagent. Isolated worktrees are one of the two
-features the owner will not give up. Spawn, send and the wake therefore stay, and the cuts come
-from around them.
+No usage data exists for any feature. The evidence is what the author uses, what the test
+scenarios exercise, and what the repository's issues show. The author does not use memory, join
+groups or the `nativeChildren` option outside the README demo and the tests, and no issue from
+anyone else mentions them.
+
+The author requires two features to stay. The `/courier tree` panel is the only view of a whole
+tree, and it is where the person opens a session, stops one or sees what waits on them. Isolated
+worktrees (`isolate: true` with `courier_cleanup`) are the only way two children can edit the
+same files at once. Courier's own spawn and wake cannot be replaced by OpenCode's subagents while
+isolated worktrees stay (Alternative A), so the cuts come from around them.
 
 ## Goals
 
 *   The model-facing tool list is exactly `courier_spawn`, `courier_send`, `courier_tree`,
-    `courier_stop`, `courier_cleanup`, `courier_answer` and `courier_later`.
-*   Removed: memory (two tools, the `memory` option, `/courier memory`, the `lessons` entry), join
-    groups and the `finding` field, the copy of typed text up the tree, `courier_cancel`,
-    `courier_children` as a separate tool, `/courier stop`, the `queue` parameter of
-    `courier_send`, the `maxChildren` and `nativeChildren` options, and every code path that only
-    serves a host older than 2.3.0.
-*   Kept unchanged in behaviour: `courier_spawn` with `isolate`, `agent`, `model`, `variant`,
-    `title` and `native`; the four report statuses; the tree panel, the footer and `/asks`;
-    missed-wake retries and `stalled`; the reminder to a child that has not reported; the
-    per-child state lines; fork notices; survival of a restart; `maxDepth` and `maxTotal` at their
-    defaults.
-*   A baseline real-model batch on OpenCode 2.3.0 exists before the first removal: every scenario,
-    five runs on each of two models.
-*   After each removal, the scenarios that still apply pass at the baseline's rate or higher on
-    both models. A removal that lowers a rate is reverted or reworked before the next one starts.
-*   Uncached input tokens per request and requests per run, as the harness reports them, are no
-    higher than the baseline's.
-*   A session that holds a group report or a scheduled message when the plugin is updated still
-    gets it delivered.
-*   A child's report, failure, silent end and ask show the child's title in the parent's
-    transcript, where a raw session id shows today.
+    `courier_stop`, `courier_cleanup`, `courier_answer`, `courier_later` and `courier_cancel`.
+*   Removed: memory (`courier_recall`, `courier_note`, the `memory` option, `/courier memory`, the
+    `lessons` instruction entry), join groups (the `group` parameter) and the `finding`
+    parameter, `courier_children` as a separate tool, `/courier stop`, the `queue` parameter of
+    `courier_send`, the `nativeChildren` option, and the paths listed under "Hosts older than
+    2.3.0".
+*   Kept: `courier_spawn` with `isolate`, `agent`, `model`, `variant`, `title` and `native`; the
+    four report statuses (`done`, `partial`, `blocked`, `failed`); `courier_cancel`; the
+    typed-text copy; the tree panel, the footer and `/asks`; missed-wake retries and `stalled`;
+    the reminder; the state lines; fork notices; survival of a restart; `courier_spawn` hidden
+    from a session at the deepest level; `maxDepth`, `maxChildren` and `maxTotal`, with their
+    defaults unchanged. Two things change in what is kept. Group names and group standing leave
+    `courier_tree`'s output, the state lines, the panel rows, the footer and the `/asks` rows.
+    The kinds of text named under "Model-facing text that changes" lose their mentions of
+    removed tools and groups.
+*   The server options are `maxDepth`, `maxChildren` and `maxTotal`. The README's tools table
+    names the eight tools above, and its terminal list has `/courier tree` and `/asks` only.
 *   The README states the difference from the host's `subagent` tool as it is on 2.3.0.
+*   `docs/maintainers/plugin-api-notes.md` loses every sentence that names a removed tool,
+    parameter, option, stored key or the release of a group, and gains none. Examples are the
+    sentence on sealing a group, the `lessons` entry and the two memory tools. The note that a
+    declined permission prompt records no turn end stays: the group release relied on that
+    behaviour, and so does the check for whether a session's turn is running.
+*   The character count of all tool descriptions and schemas is lower on the integration
+    branch than on main by at least the size of the three removed tools and the three removed
+    parameters.
+*   The real-model check is run on main and on the integration branch, and its numbers are in
+    the pull request that takes the branch to main.
+*   A scheduled message that is pending when the plugin is updated is still delivered.
+*   Each removed option that is present in the config, whatever its value, is reported in one
+    log line at load. The lines go at the next breaking release.
+*   After the last removal step, no model-facing string and no tool description contains a
+    removed name. "Model-facing text that changes" lists the names, and a test checks them.
 
 ## Non-Goals
 
 *   Replacing courier's spawn, send or wake with host subagents or native children.
-*   Making every child one kind. `native` stays as a per-spawn choice, so two kinds of child and
-    their two report paths remain.
-*   Any other new feature.
+*   Deciding whether `native` stays. It stays as a per-spawn choice here. Its removal would take
+    out the longest list of host behaviours in the maintainer notes, and is left to a design of
+    its own.
+*   Removing `courier_cancel` or the typed-text copy. Both were weighed and are under
+    "Alternatives Considered".
+*   Any new behaviour beyond the log line for a removed option, including the two under "Future
+    Improvements".
+*   Migrating a running tree's group or memory state across the update. The release notes say to
+    let running trees finish first; "Sessions that exist at the update" lists what such a
+    tree meets.
 *   Support for a host other than the pinned one. A different host gets one log line and the
     plugin loads, as today.
 *   Usage telemetry.
-*   Deleting stored keys. A removed feature's stored data is left in place and no longer read, so
-    an older plugin version still works after a rollback.
+*   Deleting stored keys. A removed feature's stored data is left in place and no longer read.
 *   Exporting memory records before memory is removed.
 *   Shortening the `courier-orchestrate` skill beyond the sentences that describe removed
     features.
 
 ## Open Questions
 
-*   **Is a message's `description` shown to the model?** The transcript line for a courier
-    message is the `description` the plugin passes with it. If OpenCode also puts it in the
-    model's context, changing it is a model-facing change and needs a real-model run.
-*   **`ctrl+x k` during a question**: does the key open the asks dialog while a question is
-    showing? If not, that is a bug with its own issue, outside this design.
-*   **The README demo**: it shows a join group and must be recorded again after groups go. It
-    cannot be recorded on the owner's machine.
-*   **Native child in a plugin-made worktree**: unverified. A yes would reopen the replacement
-    this design rejects. Checked at each pin bump.
-*   **Steering's worth**: whether the two scenarios that use the automatic copy still pass when
-    the person asks the child to tell its parent. The removal waits on that measurement.
+None.
 
 ## Critical User Journeys (CUJs)
 
@@ -110,53 +206,41 @@ from around them.
 *   **Given**: OpenCode 2.3.0 with the plugin, a session with a task of three independent parts.
 *   **When**: The session calls `courier_spawn` three times and ends its turn; each child calls
     `courier_send` with a status when it finishes.
-*   **Then**: The parent gets one new turn per report, in the order the reports arrive. Its
-    transcript shows one line per report with the child's title and status. The tree panel shows
-    three rows marked `✓`. The parent called no listing tool.
+*   **Then**: Each report that reaches the parent while it is idle starts a new turn; one that
+    arrives while a turn runs is read in that turn. Reports are read in the order they arrive.
+    The tree panel shows three child rows marked `✓`. The parent calls no listing tool.
 
-### CUJ 2: Parallel edits in worktrees
+### CUJ 2: A tree is running while the plugin is updated
 
-*   **Given**: A git project with a clean working tree.
-*   **When**: A parent starts two children with `isolate: true`; each commits on its branch
-    `courier/<session id>` and reports `done` with the branch in its artifacts; the parent merges
-    both and calls `courier_cleanup` for each.
-*   **Then**: Both worktrees are removed, both branches are merged, and the roster holds neither
-    child.
+*   **Given**: A tree started on the release before this one. One child has reported into group
+    `pair` and its report is held; the other member still runs. The parent has a check-in
+    scheduled with `courier_later`. The person updates without waiting for the tree to finish,
+    against the release notes.
+*   **When**: OpenCode loads the new plugin version.
+*   **Then**: The held report is not delivered. The tree panel and `courier_tree` show that child
+    as reported, and the person reads its text by opening the child. The second child's report
+    is delivered alone, as soon as it is sent, if its `courier_send` runs in the new copy of the
+    plugin; if it runs in the old copy, which stays loaded for a time, it is held too. The
+    check-in is delivered at its time. No key of a removed feature is deleted.
 
-### CUJ 3: A tree is running while the plugin is updated
+### CUJ 3: A config that still sets a removed option
 
-*   **Given**: A tree started on the release before groups are removed. One child has reported
-    into group `pair` and its report is held; the other member still runs. The parent has a
-    check-in scheduled with `courier_later`.
-*   **When**: OpenCode loads the new plugin version beside the old one.
-*   **Then**: At the next scheduler tick the parent is woken with the held report in one message.
-    The second child's report arrives by itself when it comes. When it has arrived, the parent's
-    check-in is removed and never fires. No stored key was deleted except the delivered group
-    entries and the removed check-in.
+*   **Given**: A global config whose courier entry sets `memory`, `nativeChildren` and
+    `maxChildren: 5`.
+*   **When**: OpenCode starts with the new version.
+*   **Then**: The plugin loads and logs one line for each of the two removed options, saying it
+    is not read and, for `nativeChildren`, what to do. `maxChildren` applies as before. A child is native only when its
+    spawn passes `native: true`.
 
-### CUJ 4: A check-in on a long-running child
+### CUJ 4: A model that still passes a removed parameter
 
-*   **Given**: A parent with one child that will run for an hour.
-*   **When**: The parent calls `courier_later` for itself with a 30-minute delay and ends its
-    turn. The server is stopped after 10 minutes and started again after 40.
-*   **Then**: The check-in is delivered once, after the restart. If the child had reported before
-    the 30 minutes were up, the check-in would have been removed at that report.
-
-### CUJ 5: The person steers a child
-
-*   **Given**: A running tree; the person opens a child from the tree panel.
-*   **When**: The person types "the API key is in `.env.local`, tell your parent".
-*   **Then**: The child reads the text in its own session and sends it to its parent with
-    `courier_send` without a status. The parent wakes on that message. The plugin itself copies
-    nothing to the sessions above.
-
-### CUJ 6: A child asks for permission
-
-*   **Given**: A standalone child that runs a shell command the rules mark `ask`.
-*   **When**: The request is raised.
-*   **Then**: The footer counts one session waiting on the person, the panel row shows `●` with
-    the request, `/asks` lists it, and the top session's model is told and may propose an answer
-    with `courier_answer`. This is as today.
+*   **Given**: A session whose transcript holds the earlier brief and skill text, which tell it
+    to use `group` and `finding`.
+*   **When**: It calls `courier_spawn` with `group`, or `courier_send` with `finding` or `queue`.
+*   **Then**: When the call runs in the new copy of the plugin, OpenCode drops the parameter
+    before the tool runs, and no error is raised. Without
+    `group`, the child's report is delivered alone and not held. Without `finding`, the report
+    carries no finding line. Without `queue`, the message is delivered at once.
 
 ## Technical Plan (Architecture)
 
@@ -168,57 +252,109 @@ from around them.
         │                       │                           │
      tree/                   person/                   scheduling/
   spawn, send, tree,      permission relay,          courier_later
-  stop, cleanup           question relay, forms      (tool + due job)
-  roster, reports,        courier_answer             dropCheckIns(session)
-  standing lines,         /asks inbox                      ▲
-  missed wakes, nudge,         │                           │ port, wired in index.ts
-  fork notice, panel           └── imports tree/           │
-        │                                                  │
-        └── when a parent's last child settles ────────────┘
+  stop, cleanup           question relay, forms      courier_cancel
+  roster, reports,        courier_answer             (due job)
+  state lines,            /asks inbox
+  missed wakes, reminder,      │
+  typed-text copy,             └── imports tree/
+  fork notice, panel
 
   platform/  hub, scheduler tick, event stream, storage helpers   (unchanged)
   kernel/    protocol envelope, tool helpers                      (unchanged)
 
-  removed:   memory/ (whole module), tree/group.ts, tree/relay.ts
+  removed:   memory/ (whole module), tree/group.ts
 ```
 
-Three of the four feature modules stay. `memory/` goes whole. Inside `tree/`, the group file and
-the typed-text relay file go; every other file stays, most of them smaller.
+Three of the four feature modules stay. `memory/` goes whole. Inside `tree/`, the group file
+goes; every other file stays, several of them smaller. No module gains a dependency on another.
 
-The scheduler keeps two tick jobs in the end state: `dueJob` (scheduled messages) and
-`wakeMissed` (re-sending a message that did not wake its session). `deliverReleased` is replaced
-by a smaller drain job for a period, then removed.
+The scheduler keeps two of its three periodic jobs: delivering scheduled messages that are due,
+and re-sending a message that did not wake its session. The job that released complete groups is
+removed. The three interfaces the server offers the terminal part become two: the one for the
+memory view goes, and the tree and summary ones lose their group fields.
 
 ### The tool surface
 
 | Tool | Change |
 |---|---|
-| `courier_spawn` | Loses `group`. `native` stays; its description no longer names the `nativeChildren` option. The description loses the group sentence and the instruction to call `courier_cancel`. |
-| `courier_send` | Loses `finding` and `queue`. Every message is delivered with `steer`, as an unqueued one is today. The description loses the group and finding sentences. |
-| `courier_tree` | Unchanged in output. Its description stops referring to `courier_children`. |
-| `courier_stop`, `courier_cleanup` | Descriptions lose their group sentences and mention `courier_tree` where they named `courier_children`. |
-| `courier_answer` | Unchanged. |
-| `courier_later` | Unchanged in input. Its result no longer tells the model to keep the id for `courier_cancel`. |
-| `courier_children`, `courier_cancel`, `courier_recall`, `courier_note` | Removed. |
+| `courier_spawn` | Loses `group`. `native` stays; its description no longer names the `nativeChildren` option. The description loses its group sentences. |
+| `courier_send` | Loses `finding` and `queue`. Every message is delivered as an unqueued one is today. The description loses the group and finding sentences. |
+| `courier_tree` | Its output loses each session's group and group standing. Its description stops referring to `courier_children`. |
+| `courier_stop`, `courier_cleanup` | Descriptions lose their group sentences and name `courier_tree` where they named `courier_children`. |
+| `courier_later` | Unchanged in input and behaviour. Its description loses "one per group". |
+| `courier_answer`, `courier_cancel` | Unchanged. |
+| `courier_children`, `courier_recall`, `courier_note` | Removed. |
 
-OpenCode's input repair deletes a parameter a tool does not declare, without an error. A model
-that still passes `group`, `finding` or `queue` after the change gets the plain behaviour: a child
-that reports by itself, a report without a finding line, a steered message. Nothing fails, and
-nothing tells the model. The baseline comparison is the check that this does not lower a pass rate.
+Today a message is delivered in one of two ways. Steered, the default, the target reads it at its
+next step, after the tool call it is running returns. Queued, with `queue: true`, the target
+reads it only after its current turn has ended. `queue` goes as a part with no known user: the
+author does not pass it, no issue mentions it and no test scenario relies on it. Its own
+description is the only text that tells a model when to use it.
+
+A spawn that passes both `isolate: true` and `native: true` is refused with a message, as today.
+
+Removing the `finding` parameter does not remove the behaviour it stood for outside a group. A
+spawned session's brief already tells it to send what other parts need to its parent at once,
+with `courier_send` without a status. That rule stays.
+
+A session at the deepest level is not offered `courier_spawn`, as today. The two memory tools,
+which were hidden from it the same way, no longer exist.
+
+### Model-facing text that changes
+
+The tool descriptions are not the only text a model reads. Six kinds of text name a removed tool,
+a join group or the `finding` parameter today: the role line, the brief, the state lines, the
+results and errors of the tools, the notices the plugin sends to a parent, and the
+`courier-orchestrate` skill. Each loses those mentions, and every session in every real-model
+scenario receives at least one of them. The implementation plan lists the strings one by one.
+
+Two strings are reworded, not just shortened:
+
+*   The refusal a session gets at the tree-wide limit when none of its own children counts says
+    today that "only reports already held for a group can still wake you". It becomes "no report
+    is still due to you".
+*   The brief's rule on what other parts need keeps its first half, "send it to the parent at
+    once with `courier_send` without a status", and loses the half about the `finding` parameter.
+
+A list of strings built by search can miss one. So the last removal step adds a test over every
+model-facing string and tool description. It fails if any contains one of the removed names:
+`courier_children`, `courier_recall`, `courier_note`, `nativeChildren`, `lessons`, "join group",
+or `finding` or `queue` as a parameter name. The test, not a list, is what shows the removal is
+complete. It does not forbid the plain word "finding", which the brief and the skill still use
+for what one part learns that others need.
 
 ### Options
 
 | Option | Change |
 |---|---|
-| `maxDepth`, `maxTotal` | Unchanged, defaults 5 and 30. |
-| `maxChildren` | Removed. The per-session count check in `tree/limits.ts` goes; the tree-wide `maxTotal` check stays. |
+| `maxDepth`, `maxChildren`, `maxTotal` | Unchanged, defaults 5, 5 and 30. |
 | `memory` | Removed. |
 | `nativeChildren` | Removed. A child is native only when its spawn passes `native: true`. |
 
-A removed option that is still set in a user's config is ignored without a message, as the
-`webhook` option is today. The role line that tells a parent what OpenCode's own turn-end message
-is, which the option used to add for every session, is now added only at a parent's first
-`native: true` spawn. That path exists today for the option-off case and becomes the only one.
+A removed option that is present in the config is not read, whatever its value. At load the
+plugin logs one line for it, through the path that logs an option with a bad value today. For
+`nativeChildren` the line says the option is not read and that a spawn asks for a native child with `native: true`. That option
+changed how a kept feature behaves: with it on, a user's non-isolated children were native, and
+after the update they are standalone, so their permission prompts move from OpenCode's view to
+`/asks` and they leave OpenCode's subagent tab. For `memory` the line says the option and the
+feature are gone.
+
+Today, when a native child's turn ends, OpenCode writes a message of its own into the parent,
+beside the child's courier report. A parent that may have native children carries one sentence
+in its role line saying what that message is, so it does not take it for the report. With the
+option on, every session that can start others gets that sentence. With the option gone, a
+parent gets it at its first `native: true` spawn. That path exists today for the option-off case
+and becomes the only one.
+
+### What the README says about the host's `subagent` tool
+
+The README says today that the host's tool "hands back a child's final answer" and that courier
+is for more than that. On 2.3.0 the host's tool also runs its child in the background, wakes an
+idle parent when the child's turn ends, and shows a subagent's permission prompts in the top
+session's view. The README is corrected to say so, and to name what courier adds on top: a
+message from a child before its turn ends, a status and a branch name in its report, a child in
+a git worktree of its own, more than one level of children without a host config change, and a
+standalone child's permission request or question reaching the person through the top session.
 
 ### Stored data
 
@@ -226,186 +362,224 @@ Every key stays as it is in storage; a removed feature's keys are no longer read
 
 | Key | After the plan |
 |---|---|
-| `roster/`, `roster-by-child/`, `report/`, `wake/`, `later/`, `question/`, `scheduler/owner` | Unchanged. A roster entry's `group` field is ignored. |
-| `group/<parent>/<name>/<session>` | Read only by the drain job, which removes an entry once its report is delivered. Not read after the drain job is removed. |
-| `typed/<session>/<inbox id>` | Not written, not read. |
+| `roster/`, `roster-by-child/`, `report/`, `wake/`, `later/`, `question/`, `typed/`, `scheduler/owner` | Unchanged. A roster entry's `group` field is ignored. |
+| `group/<parent>/<name>/<session>` | Not written, not read. |
 | `memory/…` | Not written, not read. |
 
-The load-time prune (`pruneExpired`) stops cleaning `typed/` entries, since nothing writes them.
+### Sessions that exist at the update
 
-### Draining held group reports
+No code migrates a removed feature's state. A tree that used no join group keeps running at the
+update: later reports arrive, scheduled messages fire and the stored list of children stays. A
+tree with a join group can stop in part, as listed below. The release notes say to let running
+trees finish first; OpenCode does not show release notes when it updates a plugin, so a person
+may read that advice only afterwards.
 
-Old and new copies of the plugin share one hub in a process, and the scheduler tick runs the code
-of the copy loaded last. A new copy with no group code would leave a held report in storage for
-good. So groups go in two steps.
+What such a tree meets:
 
-*   **Step one.** `group` and `finding` leave the tool schemas. `spawn` no longer joins a group and
-    `send` no longer holds a report. `deliverReleased` is replaced by a drain job on the same tick.
-    At each tick it reads every `group/` entry, and for each parent and group name that has at
-    least one held report it sends the parent one message with those reports, in the wording a
-    released group uses today, then removes the delivered entries and the entries of members that
-    never reported. It does not wait for the group to be complete or for the parent's turn to end.
-    It claims each group in the hub's shared claim set under the key a release uses today, so an
-    old copy running the old job and a new copy running the drain do not both deliver.
-*   **Step two.** The drain job, `tree/group.ts`, the group store and the group wording are
-    deleted. This ships in the first release after the next plugin API pin bump, so the drain is
-    in at least one full release cycle.
+*   **A report held in a join group stays in storage, undelivered.** The new version has no group
+    code. The child's state line, `courier_tree` and the panel show it as reported, since that
+    comes from the report keys, not the group keys. Its text is in the child's own session, and
+    a message to the child asking it to report again brings it to the parent.
+*   **A group whose members have all reported, but which was not yet released, never wakes its
+    parent.** No message is waiting for the parent, so no row shows `stalled`. A parent that is
+    itself a child still owes its own report, so it keeps a slot in its own parent's
+    `maxChildren` and in the tree's `maxTotal`. With a person watching, they see every child as
+    reported and the parent idle, and have to prompt the parent. In an unattended tree, or where
+    the parent is itself a child, nothing prompts it and that part of the tree stops.
+*   **The old copy of the plugin can hold more.** OpenCode keeps the old copy loaded beside the
+    new one for a time this design does not bound. A `courier_send` that runs in it can hold one
+    more report, and a `courier_spawn` with `group` that runs in it can start a group that
+    nothing releases. Both end as the cases above.
+*   **A parameter the tools dropped is ignored**, as CUJ 4 describes. The text of a `finding` is
+    lost, and nothing tells the model.
 
-The drain runs on every tick, not once at load, because an old copy that is still running a tree
-can hold a new report after the new copy has loaded. A user who updates from a version before step
-one straight to a version after step two keeps any held report in storage, undelivered. The
-parent's state lines and `courier_tree` still show that child as reported.
+One leftover reaches further than running trees. A session that may start others, in a project
+where `courier_note` had written a lesson, got a `lessons` instruction entry. The entry survives
+compactions and forks and names `courier_recall`. Such a session keeps it after the update,
+including the top session of a finished tree that the person goes on using, and a call to the
+tool fails as unknown. Nothing removes the entry: that would be code to migrate a removed
+feature's state, which this design does not write.
 
-This choice was made by the drafting session at the author's request ("you decide on best
-practice"), over a one-time sweep at load and over no delivery at all.
+A scheduled message is different: `courier_later` stays, so a pending message is delivered as
+before.
 
-### Dropping check-ins without `courier_cancel`
-
-`tree/standing.ts` already recomputes a parent's children on every event that moves one: a
-report, a failed turn, a silent end, a stop, a cleanup, a deletion. That is the one place that
-knows when the last child a parent waits on has settled.
-
-`tree/` may not import `scheduling/`. So `index.ts` gives `tree/` a port, `dropCheckIns`, as it
-gives `courier_stop` the `cancelScheduled` port today. When a standing sync finds that the parent
-has at least one child and none of them still owes a report, it calls the port with the parent's
-session id. The port removes every `later/` entry whose sender and target are both that session.
-
-Rules that follow from this:
-
-*   A message a session scheduled for another session is never dropped this way.
-*   A message a session scheduled for itself for any other purpose is dropped too, once its last
-    child settles. `courier_later`'s description says so.
-*   A session with no children keeps its messages: there is no settle event.
-*   A check-in scheduled after the last child settled stays until it fires.
-*   `courier_stop` keeps cancelling the messages of every session it stops.
-
-The standing sync runs through the hub in whichever copy handles the event, so the port is
-optional on the ports type and skipped when an older copy's ports lack it.
-
-### Typed text stays in the child
-
-`tree/relay.ts` is deleted, with the two calls into it from `tree/events.ts`, the `typed/` store
-functions and the notice wording. Text typed into a spawned session is an ordinary prompt to that
-session and nothing else. The sentence in the `courier-orchestrate` skill that tells a parent what
-the copied text is goes with it. No wording is added to tell a child to pass typed text on: the
-person asks for that in their own words.
-
-The question relay in `person/` is a different mechanism and is not touched.
-
-### Titles in the transcript
-
-The line a parent's transcript shows for a courier message is the `description` the plugin passes
-when it enqueues the message. Today it is built from the session id: `Message from ses_…`,
-`Session ses_… failed`, `Session ses_… ended without a report`, `Session ses_… asks for
-permission`. The plugin has the child's title in its roster entry at each of these points.
-
-The descriptions change to carry the title and, for a report, the status:
-
-| Today | After |
-|---|---|
-| `Message from ses_…` (a report) | `<title> reported <status>` |
-| `Message from ses_…` (no status, from a child) | `<title> sent progress` |
-| `Message from ses_…` (from a parent, or a session not in the roster) | `Message from <title or id>` |
-| `Session ses_… failed` | `<title> failed` |
-| `Session ses_… ended without a report` | `<title> ended without a report` |
-| `Session ses_… asks for permission`, `… no longer asks …`, the two form lines | The same wording with the title |
-
-The envelope inside the message, which the model reads, keeps the session id: the model needs the
-id to call `courier_send`, `courier_stop` and `courier_answer`. A title is clipped to 60
-characters in a description.
-
-This is a change to the server part only. It was found while drafting: the brief assumed the line
-was OpenCode's and that a terminal API might be needed.
+The terminal part and the server part ship in one package, but a terminal that was open before
+the update still runs the old terminal part. Its memory view calls an interface the new server no
+longer registers, and shows its existing error for a failed call. Its tree panel and footer read
+group fields that are no longer sent, and show no group.
 
 ### Hosts older than 2.3.0
 
-Removed, because each serves only an older host:
+Removed, because it serves only an older host:
 
-*   The optional `instructions` port (keyed session instructions arrived in 2.2.0). It becomes a
-    required port; the cast in `index.ts` and the optional chaining in `spawn.ts`, `standing.ts`
-    and `fork.ts` go.
-*   The branch in `tree/domain.ts` and `tree/running.ts` that decides whether a session runs when
-    `time.busy` is absent (it arrived in 2.2.2), and the matching branch in `tree/wake.ts`.
+*   The branch that decides whether a session runs when the host gives no `busy` time (it arrived
+    in 2.2.2), and the matching branch in the re-send logic. A session that has not run since its
+    host was upgraded has an `idle` time and no `busy` time; after the change the plugin reads it
+    as idle, which is correct.
 
 Kept, although they look like fallbacks:
 
-*   The `try`/`catch` around registering the `experimental.idle` and `fork` hooks. Both hooks are
-    experimental on 2.3.0 and may be absent in a later host.
-*   The path in `tree/context.ts` that adds the role as a system part. It also serves a fork, a
-    failed instruction put and a top session that has not spawned yet.
-*   Optional ports that cover an older copy of the plugin in the same process, as opposed to an
-    older host. The hub's version rule depends on them.
+*   Every check for a missing instructions port. Without the port a spawn falls back to adding
+    the role as a system part. Removing the check would make that spawn fail instead, after its
+    session and worktree exist, and the maintainer notes say the port's location in the host API
+    may move in a later release.
+*   The guard around registering the `experimental.idle` and `fork` hooks. Both are experimental
+    on 2.3.0 and may be absent in a later host.
+*   The system-part path itself. It also serves a fork, a session whose instruction entry could
+    not be written and a top session that has not spawned yet.
+*   The plugin's own filter that drops an event of a type it did not ask for. A host that ignores
+    the filter it is given may be a newer one.
 
 The version check at load keeps its one log line. The "server part loads on any V2 host from 2.0.4
 on" claim in the README and the reference is replaced by the pinned version alone.
 
+### The real-model check
+
+The check compares real-model runs of the plugin before and after the removals. It informs the
+decision to release; it does not make it. Five runs per scenario cannot tell a small drop from
+chance, and the repository's own floor for a claim about how models behave is five finished runs
+on each of two models. So the numbers are reported and the author decides.
+
+*   **When.** Once, when every step is merged into the integration branch. The steps do not
+    touch main, so main's head is the "before" and the branch's head is the "after", and both can
+    be run in the same days.
+*   **What.** All ten scenarios, five finished runs each, on each side. A run that ends on a
+    provider limit is repeated. The two sides are run in turn, scenario by scenario, so that a
+    change in the model or its load falls on both.
+*   **Model.** One model, whichever of the two available ones can be reached: a self-hosted one,
+    or a free cloud one with a daily request limit. Both sides use it.
+*   **Settings.** The harness defaults on both sides: no memory record seeded beforehand, native
+    children not turned on, the `courier-orchestrate` skill offered.
+*   **One checker for both sides.** The checkers are not narrowed in this design. Every way a
+    run of main could pass stays accepted: a report held in a group, a finding sent ahead, a
+    look through `courier_children`, the top session's one `courier_recall`. A run of the branch
+    cannot take those ways, because the tools and parameters are gone. So the branch's checkers
+    score both sides.
+*   **What is reported.** Per scenario, for each side: passes of five, median requests per run
+    and median uncached input tokens per request, and how many runs used a group, a finding or
+    `courier_recall`. The character count of all tool descriptions and schemas is taken on each
+    side too.
+*   **A closer look.** A scenario with two or more fewer passes on the branch is run again, ten
+    runs on each side. If the branch again has two or more fewer, the drop is taken as real.
+*   **The decision.** The author decides whether to release, and the pull request to main
+    carries the numbers and the reason. For a drop taken as real there are three courses: find
+    the step by running the scenario at each step's merge commit, and reword what that step
+    changed; restore the feature that step removed; or release with the drop stated in the
+    release notes. A branch run that costs more is expected where the run of main used a group,
+    since a group gives one parent turn for several reports.
+
+Before step 1, one run of `fanout` and one of `recursive` are made at main. They show that a
+model can be reached and the harness works on 2.3.0, and they block nothing.
+
+The ten scenarios:
+
+| Scenario | What it checks |
+|---|---|
+| `fanout` | A parent starts two children and replies with both results. |
+| `permission` | A child's permission request reaches the person and is answered. |
+| `question` | A child's question reaches the person and the answer comes back. |
+| `recursive` | A top session splits a job two levels deep and combines the parts. |
+| `recursive-fault` | One part reports `partial`; its parent has it finished. |
+| `recursive-staged` | One part must be done before the others start. |
+| `recursive-finding` | The person types a correction into one part; it must reach the other parts. It uses the typed-text copy, which stays. |
+| `recursive-conflict` | The person's typed words contradict a part's task; the checker reads how the sessions above treat them. |
+| `discovery` | One part learns a value the other two need; it must reach them through the parent. This is the scenario the removal of `finding` and groups bears on most. |
+| `review` | A change is made, reviewed by another session and fixed. |
+
+Each pull request that changes a model-facing string also carries one `e2e/real-model.sh` run in
+its body, as the repository's rules require. That run is information for the reviewer of the pull
+request and is not part of this check.
+
 ### Order of work
 
-Each step is one pull request with its unit tests, its live scenario changes and its part of
-`docs/reference.md`. A step that changes a model-facing string comes with a real-model run of the
-scenarios it touches, five runs on each of the two baseline models; the whole suite runs once
-when the last step is merged.
+Steps 1 to 5 are one pull request each, with its unit tests, its live scenario changes and its
+part of `docs/reference.md`. They merge into an integration branch, not into main, so main stays
+releasable for a fix while the work is under way.
 
 ```text
- 0  baseline batch on 2.3.0 (no code change)            ── gate for everything below
- 1  memory removed                                       ┐
- 2  older-host paths removed                             │
- 3  small cuts: courier_children, /courier stop,         │  release A (0.17.0, breaking)
-    queue, maxChildren, nativeChildren                   │
- 4  groups step one: parameters gone, drain job          │
- 5  courier_cancel gone, check-ins dropped by settle     │
- 6  titles in the transcript                             ┘
- 7  steering removed, after its two scenarios are        ── release B
-    rewritten and pass at the baseline's rate
- 8  groups step two: drain job gone                      ── first release after the next pin bump
- 9  README demo recorded again, without a group          ── with release A if it can be recorded,
-                                                            else as soon as it can
+ 1  memory removed                                        ┐
+ 2  the branches for a host without a busy time removed   │
+ 3  small cuts: courier_children, /courier stop,          │  pull requests into the
+    queue, the nativeChildren option; the README's        │  integration branch, in order
+    account of the host's subagent tool corrected         │
+ 4  groups and finding removed                            │
+ 5  README demo recorded again, without a group           ┘
+    the real-model check: main against the branch; the author decides
+    one pull request from the integration branch to main, then release 0.17.0 (breaking)
+ 6  the checkers lose the allowances no run can use any more
 ```
 
-Steps 1 to 6 are independent of each other except that 3 and 4 both edit the tool descriptions in
-`tree/tools.ts` and the snapshot in `test/notices.test.ts`, so they merge one after the other.
-Step 5 depends on nothing in step 4.
+Steps 1 to 4 do not depend on each other's behaviour: any one of them could ship alone. They do
+edit the same files. All four touch the composition root and the spawn code, and steps 1, 3 and 4
+touch the model-facing strings and their snapshot. So they merge in the order 1, 2, 3, 4, each
+rebased on the one before. Step 5 depends on step 4 and merges before the check, so the README
+never shows a join group the plugin does not have. Step 6 follows the release as an ordinary pull
+request to main.
+
+If OpenCode releases a version while the branch is open, main takes the pin bump as usual and
+the branch takes main. The check runs after that, so both sides are on the same host version.
+
+## Risks and Mitigations
+
+| Risk | Effect | Mitigation or acceptance |
+|---|---|---|
+| A report is held in a group at the update | Its text is not delivered; in an unattended tree a parent whose group was complete is never woken | Accepted. The text is in the child's session, and a message asking the child to report again delivers it. The release notes say to let running trees finish, though a person may read them only after updating. |
+| The old copy of the plugin holds a report or starts a group after the update | The same as the row above | Accepted, for the time the old copy stays loaded. |
+| A rollback after the update | A group that was complete before the update is released late, at the old version's first tick. A group with a member that reported under the new version is never released, and its name stays taken. | Accepted. The rollback is not tested. |
+| A session keeps a `lessons` entry that names `courier_recall` | A call to the tool fails as unknown | Accepted. Only a session in a project where `courier_note` wrote a lesson has the entry. The release notes mention it. |
+| A user has `nativeChildren` set to `true` | Their non-isolated children become standalone: prompts move to `/asks`, children leave OpenCode's subagent tab | One line in the server log at load. A person using only the terminal does not see that log; the release notes say to ask for a native child in the prompt or in the project's instructions. |
+| The shortened text makes a model behave worse | A real-model scenario passes less often | The real-model check reports it, and a drop of two or more is run again at ten against ten before the author decides. The check is weak by design: five runs on one model. |
+| No model can be reached when the check is due | The release has no numbers | The release waits. |
+| A session with an old brief passes `finding` | The text is dropped and nobody is told | Accepted, as part of not migrating running trees. |
+| A parent that used a group now gets a wake per report | Up to one parent turn per report for a fan-in, each a full-context request | Accepted. No user of groups is known. The release notes state it. |
+| A session that called `courier_children` calls `courier_tree` | A longer listing: up to `maxTotal` sessions where the other returned its own children | Accepted. The state lines already give a parent its children without a call. |
+| Memory records and held reports stay in storage | Titles, lessons and report text remain on disk, and the command that could delete a memory record is gone | Accepted. The release notes name the key prefixes and say that the plugin offers no command to remove them. |
+| Security | None expected: no new input, permission, stored secret or network path | None needed. |
 
 ## Alternatives Considered
 
+The author made each rejection below.
+
 ### Alternative A: Replace spawn and wake with the host `subagent` tool or native children
 
-*   **Pros**: The largest cut. OpenCode shows the children in its own subagent tab, shows their
-    asks in the top session's view, and `/goal` waits for them. A child cannot end silently.
+*   **Pros**: Removes spawn, send and the wake, which no other alternative does. OpenCode shows
+    the children in its own subagent tab, shows their asks in the top session's view, and its
+    `/goal` command, which keeps a session working until a goal is met, waits for them. A child
+    cannot end silently.
 *   **Cons**: OpenCode creates a session with a directory or a parent, never both, so a child in
     its own worktree cannot be a subagent. Depth beyond one level needs a host config change.
     Reports lose their status and their branch name. A child cannot message its parent before its
     turn ends. Spawn limits cannot be enforced. A lost wake is not retried.
-*   **Reason for Rejection**: Rejected by author: isolated worktrees are protected, and they rule
-    this out. Checked again at each pin bump, in case the host lets a session have both a
-    worktree and a parent.
+*   **Reason for Rejection**: Two children could no longer edit the same files at once, which is
+    one of the two features that must stay.
 
-### Alternative B: One kind of child, standalone only (remove `native`)
+### Alternative B: Remove `native` in this design
 
-*   **Pros**: One report path, one set of notices, one case in the panel. No extra parent turn per
-    child turn. `opencode run` cannot stall on a native child. Six of seven reviewers proposed it.
+*   **Pros**: One kind of child, one report path, one case in the panel. No extra parent turn per
+    child turn. `opencode run`, the command that runs one prompt and exits, cannot hang waiting
+    on a native child. The longest list of host behaviours in the maintainer notes goes, which is
+    most of the first cost this design names.
 *   **Cons**: Loses OpenCode's own "Subagent finished" line in the parent's transcript and the
-    subagent tab, which the author uses.
-*   **Reason for Rejection**: Rejected by author: the author prefers what a native child shows in
-    the terminal. Only the `nativeChildren` option goes. The title change in this design closes
-    part of the gap, so this alternative is weighed again once that has shipped.
+    subagent tab, which the author uses. No reviewer has examined what the removal touches.
+*   **Reason for Rejection**: It removes a feature the author uses, and what it touches has not
+    been worked out. It gets a design of its own. Only the `nativeChildren`
+    option goes here.
 
 ### Alternative C: Native for every non-isolated child, standalone only for isolated ones
 
-*   **Pros**: Every child that can be a host subagent is one. One reviewer held this is where the
-    plugin ends up.
-*   **Cons**: Two report paths stay for good, and the choice between them follows a host
+*   **Pros**: Every child that can be a host subagent is one.
+*   **Cons**: Two report paths stay permanently, and the choice between them follows a host
     limitation, not anything the user chose. Each native child turn costs every native level
     above it a turn.
-*   **Reason for Rejection**: Rejected by author: native stays an opt-in per spawn, off unless
-    asked for.
+*   **Reason for Rejection**: It makes the extra parent turn the default for every user, where
+    today only a spawn that asks for a native child pays it.
 
 ### Alternative D: A worktree tool beside the host `subagent` tool
 
 *   **Pros**: The plugin would shrink to worktree handling and a panel.
-*   **Cons**: Nothing in the host shows that a subagent can be placed in another directory, and
-    permission requests are kept per location.
-*   **Reason for Rejection**: Rejected by author: unverified, and it removes mid-run messages and
+*   **Cons**: As Alternative A says, the host creates a session with a directory or a parent,
+    so a subagent cannot be placed in a worktree. Permission requests are kept per location.
+*   **Reason for Rejection**: The host does not allow it, and it removes mid-run messages and
     statuses as Alternative A does.
 
 ### Alternative E: Isolate every child, host subagents for the rest
@@ -413,157 +587,251 @@ Step 5 depends on nothing in step 4.
 *   **Pros**: One courier path, for isolated children only.
 *   **Cons**: Every split gains a merge step, including the ones that only read or that write
     files the parent reads directly.
-*   **Reason for Rejection**: Rejected by author: it makes the common case slower to remove a
-    path.
+*   **Reason for Rejection**: It adds a merge step to every split that does not need isolation,
+    to remove one path.
 
 ### Alternative F: Only remove the paths for older hosts
 
 *   **Pros**: No behaviour changes for anyone on 2.3.0. No real-model risk.
-*   **Cons**: About 60 to 100 source lines. It changes nothing a model sees.
-*   **Reason for Rejection**: Rejected by author as the whole plan: too small. Kept as step 2.
+*   **Cons**: Removes a few dozen source lines and changes nothing a model sees.
+*   **Reason for Rejection**: As the whole plan it touches only part of the first of the four
+    costs. Kept as step 2.
 
 ### Alternative G: Options that turn features off, with the code kept
 
 *   **Pros**: Nothing breaks. A user who wants memory or groups turns them back on.
-*   **Cons**: The code, its tests and its host-trap notes stay, so the cost per OpenCode release
-    does not drop. More options to explain.
-*   **Reason for Rejection**: Rejected by author: the aim is less code, not hidden code.
+*   **Cons**: The code, its tests and its host notes stay, so the cost per OpenCode release does
+    not drop. More options to explain.
+*   **Reason for Rejection**: None of the four costs falls: the code is still there to maintain
+    and there are more options to document.
 
 ### Alternative H: Two plugins, a core and extras
 
 *   **Pros**: The core is small; memory and scheduling live elsewhere.
 *   **Cons**: Both share the hub and the pin, so each OpenCode release costs the same work or
     twice the work. Two packages to install and version.
-*   **Reason for Rejection**: Rejected by author: it moves the cost, it does not remove it.
+*   **Reason for Rejection**: The work per OpenCode release stays the same or doubles.
 
-### Alternative I: OpenCode's schedules in place of `courier_later`
+### Alternative I: Remove `courier_cancel`
 
-*   **Pros**: One tool and a tick job fewer.
-*   **Cons**: Host schedules are behind a feature flag that is off in release builds. A plugin
-    cannot reach them. A firing carries no sender, does not wait for a running turn to end, and
-    `courier_stop` cannot cancel it.
-*   **Reason for Rejection**: Rejected by author: not available on a stock 2.3.0.
+*   **Pros**: One tool fewer.
+*   **Cons**: Without it a stale check-in fires and costs its session one full-context turn. How
+    often that happens is not measured. The two automatic rules that could replace the tool each
+    drop a check-in that is still wanted. Cancelling when the last child settles removes the
+    watch on a `blocked` or `partial` child that goes back to work. Skipping a check-in when no
+    child owes a report skips one that watches something outside the tree. Nothing shows that
+    models leave the tool unused.
+*   **Reason for Rejection**: No automatic rule replaces the tool, and its cost against a stale
+    turn is unmeasured.
+### Alternative J: Remove scheduling, or use OpenCode's schedules for it
 
-### Alternative J: Remove scheduling altogether
+*   **Pros**: Two tools and a periodic job fewer.
+*   **Cons**: Nothing follows up a child whose failure went unseen while the server was down, or
+    one paused by a rate limit. The scheduler stays anyway, for missed wakes. Host schedules are
+    behind a feature flag that is off in release builds, a plugin cannot reach them, and
+    `courier_stop` cannot cancel one.
+*   **Reason for Rejection**: Host schedules are not available on a stock 2.3.0, and a scheduled
+    check-in is the only cover for a server that stopped.
 
-*   **Pros**: Two tools fewer, and `scheduling/` goes.
-*   **Cons**: Nothing follows up a child while the server is down or after a rate limit pauses it.
-    The scheduler tick stays anyway, for missed wakes.
-*   **Reason for Rejection**: Rejected by author: `courier_later` stays, only `courier_cancel`
-    goes.
+### Alternative K: Remove the typed-text copy
 
-### Alternative K: Drop a session's check-ins when it sends its own final report
+*   **Pros**: About 130 source lines, a stored key and four host behaviours a pin bump re-checks
+    only for this.
+*   **Cons**: Every session above the child gets the person's words today. Without the copy, the
+    child must judge whether to send them up and its parent whether to pass them on, and a child
+    that acts and tells nobody leaves no sign. One of the two real-model scenarios that cover it
+    checks the wording of the copied text, so it would lose its subject.
+*   **Reason for Rejection**: It swaps a mechanism for a model's judgement, with no check that
+    would show a failure.
 
-*   **Pros**: The rule is local to the session that scheduled the message.
-*   **Cons**: The top session never reports, and it is the main user of check-ins, so its
-    check-ins would always fire.
-*   **Reason for Rejection**: Rejected by author: the drop happens when the session's last child
-    settles.
+### Alternative L: Soften the update for running trees
 
-### Alternative L: No automatic drop of check-ins
+*   **Pros**: A tree that is mid-run at the update keeps the text of a held report or of a
+    `finding`, or its parent is at least told. The ways weighed: a periodic job that delivers
+    held reports for one more release; a single delivery at load; a `finding` parameter kept
+    declared for one more release; a log line at load naming parents with held reports; a notice
+    to each such parent.
+*   **Cons**: The first three are new code for a removed feature, each with its own test and a
+    second release to remove it. A log line reaches nobody in the unattended case, which is the
+    one it would be for. A notice to the parent that carries the held text is delivery under
+    another name, and one without the text tells a model to go and read sessions it has no tool
+    to read.
+*   **Reason for Rejection**: Each costs code that outlives its feature, for a feature with no
+    known user, against one release-note line.
 
-*   **Pros**: No new rule. A message scheduled for another purpose is never removed by surprise.
-*   **Cons**: A stale check-in wakes its parent for one turn with nothing to do, a full-context
-    request each time.
-*   **Reason for Rejection**: Rejected by author: the drop on the last child's settle was chosen.
+### Alternative M: Remove the `maxChildren` option
 
-### Alternative M: Remove groups in one release with a one-time delivery at load
+*   **Pros**: One option fewer.
+*   **Cons**: The per-session limit moves from 5 to 30 for every user. One session can take every
+    slot in the tree, and no real-model scenario starts more than three children, so the
+    real-model check would not show it. None of the four costs names the option.
+*   **Reason for Rejection**: The option limits what one session can start, and removing it
+    changes that limit for every user with no cost it would reduce.
 
-*   **Pros**: One release. No job stays behind.
-*   **Cons**: An old copy of the plugin still running in the process can hold a report after the
-    sweep has run. That report waits until the next server start.
-*   **Reason for Rejection**: Rejected by author, who left the choice to the drafting session: a
-    job on every tick covers the old copy, at the cost of a second step.
+### Alternative N: One `courier` tool with a mode parameter
 
-### Alternative N: Remove groups in one release and deliver nothing
+*   **Pros**: One tool description where there are eight.
+*   **Cons**: One tool with several modes needs an input that is one of several shapes. The
+    host's handling of such inputs is recorded in `docs/maintainers/plugin-api-notes.md`, under
+    "Tools", as error-prone: its input repair, which drops parameters a tool does not declare,
+    cannot tell which shape was meant.
+*   **Reason for Rejection**: It lowers the count and takes on an input shape the host handles
+    badly.
 
-*   **Pros**: The least code and no second step.
-*   **Cons**: A tree that is mid-run at the update loses the text of its held reports; a person
-    has to open each child to read it.
-*   **Reason for Rejection**: Rejected by author, who left the choice to the drafting session:
-    finished work should not go unseen when a small job prevents it.
+### Alternative O: Delete the `courier-orchestrate` skill
 
-### Alternative O: Keep the automatic copy of typed text up the tree
+*   **Pros**: The shortest model-facing surface. `recursive` and `recursive-fault` each passed 3
+    of 3 runs with the skill denied, in fewer requests than with it offered.
+*   **Cons**: `recursive-finding`, `discovery` and `review` have never been run with the skill
+    denied. Only the skill tells a top session to pass a finding on to the parts it affects,
+    and those are the scenarios that check it.
+*   **Reason for Rejection**: Unmeasured for the three scenarios whose checks rest on text only
+    the skill carries.
 
-*   **Pros**: A person who forgets to say "tell your parent" is still covered. Two real-model
-    scenarios pass with it today.
-*   **Cons**: About 130 source lines, a stored key, and a notice that every session above the
-    child receives whether the text concerns it or not.
-*   **Reason for Rejection**: Rejected by author: a child can send the text up itself when asked.
-    The removal waits on the two scenarios passing in their rewritten form.
+### Alternative P: Treat a child's turn end as its report and drop the statuses
 
-### Alternative P: One `courier` tool with a mode parameter
+*   **Pros**: No reminder to an unreported child, and less brief and skill text.
+*   **Cons**: `blocked` and `partial` cannot be told apart from `done`.
+*   **Reason for Rejection**: The reminder and every real-model checker depend on the statuses.
 
-*   **Pros**: One tool description where there are seven.
-*   **Cons**: A closed schema with a union of inputs is a known trap on the host, and a weaker
-    model fills flat tools more reliably.
-*   **Reason for Rejection**: Rejected by author: it lowers the count and raises the error rate.
-
-### Alternative Q: Delete the `courier-orchestrate` skill
-
-*   **Pros**: The shortest model-facing surface. Two recursive scenarios pass 3 of 3 with the
-    skill denied, in fewer requests.
-*   **Cons**: Three scenarios have never been run with the skill denied. Only the skill tells a
-    top session to pass a finding on to the parts it affects.
-*   **Reason for Rejection**: Rejected by author for now: unmeasured.
-
-### Alternative R: Treat a child's turn end as its report and drop the statuses
-
-*   **Pros**: No reminder to an unreported child, and much less wording.
-*   **Cons**: `blocked` and `partial` cannot be told apart from `done`. Every real-model checker
-    assumes statuses.
-*   **Reason for Rejection**: Rejected by author: the statuses drive the liveness rules.
-
-### Alternative S: Add usage telemetry before cutting anything
+### Alternative Q: Add usage telemetry before cutting anything
 
 *   **Pros**: The cuts would rest on data, not on the absence of it.
-*   **Cons**: No infrastructure exists for it, and it is a privacy decision for every user.
-*   **Reason for Rejection**: Rejected by author: out of proportion for this plugin.
+*   **Cons**: No infrastructure exists for it, and it needs a privacy decision from every user.
+*   **Reason for Rejection**: It needs infrastructure and consent the plugin does not have. This
+    design decides from the author's use and the issue tracker instead, as The Problem states.
 
-### Alternative T: Delete a removed feature's stored keys at load
+### Alternative R: Delete a removed feature's stored keys at load
 
 *   **Pros**: No dead data in storage.
 *   **Cons**: A rollback to the previous release finds its data gone.
-*   **Reason for Rejection**: Rejected by author: keys are left in place and no longer read.
+*   **Reason for Rejection**: A rollback would lose every memory record and held report, and the
+    storage rule in the architecture document is that a key is never changed or removed under a
+    running version.
+
+### Alternative S: Gate every step on its own real-model batch
+
+*   **Pros**: A drop is tied to one step immediately.
+*   **Cons**: Five batches of 50 runs or more. The steps ship in one release anyway.
+*   **Reason for Rejection**: Five times the runs for the same release decision. One batch
+    informs the release, and a scenario is run per step only when it shows a drop taken as real.
+
+### Alternative T: Offer each session only the tools it can use
+
+*   **Pros**: A session at the deepest level has no children, so of the eight tools only
+    `courier_send`, `courier_later` and `courier_cancel` are of use to it, and `courier_answer`
+    works only from the top. Hiding the rest would take four more descriptions out of every
+    request such a session makes, beyond `courier_spawn`, which the plugin already hides from
+    it through the same hook.
+*   **Cons**: It is an addition: a rule per role, test cases per role, and every string that
+    names a hidden tool has to be checked per role. A fork of a deepest-level session becomes a
+    top session and its tool list changes. The saving is not measured.
+*   **Reason for Rejection**: Not rejected on merit. It is new behaviour with its own test
+    matrix, and the removals here neither need it nor block it. It is the first follow-up.
+
+### Alternative U: Warn about removed options for one release, then remove them
+
+*   **Pros**: A user who set `nativeChildren` or `memory` sees a warning while the option still
+    works.
+*   **Cons**: A second release, and the code for both options and their features stays until it.
+*   **Reason for Rejection**: No one is known to set either option outside the demo and the
+    tests, and a log line at load in the release that removes them tells such a user the same
+    thing.
 
 --------------------------------------------------------------------------------
 
 ## Non-Functional Requirements
 
-*   **Rollout and rollback.** Release A is a breaking 0.x minor release. Its notes list every
-    removed tool, parameter, option and command. Rolling back to the release before it works,
-    because no stored key changed shape and none was deleted except delivered group entries and
-    dropped check-ins. Memory records written before release A are still there after a rollback.
-*   **Token cost.** The goal is fewer model-facing characters per request. The transcript titles
-    add none to the model's context if `description` is not shown to the model; that is an open
-    question above.
+*   **Rollout and rollback.** The release is 0.17.0, a breaking 0.x minor release. Its notes list
+    every removed tool, parameter, option and command, name the storage key prefixes left
+    behind, and say to let running trees finish before updating. What takes each one's place:
+    for `courier_children`, `courier_tree`; for `/courier stop`, the `s` key in the tree panel;
+    for `finding`, a message to the parent without a status; for `nativeChildren`,
+    `native: true` on a spawn; for memory and `queue`, nothing; for join groups, nothing: a
+    parent gets up to one turn per report. A rollback finds every stored key in the shape the old
+    version wrote, since none changed shape and none was deleted. The rollback itself is not
+    tested; "Risks and Mitigations" lists what to expect.
+*   **Token cost.** Fewer tool description and schema characters per request; the goal states
+    the floor. Two places may cost more: a fan-in that used a group, which now gets up to one
+    parent turn per report, and a call to `courier_tree` where `courier_children` was called.
 *   **Privacy.** Real-model results are published without the self-hosted model's name, address
     or provider id.
 
 --------------------------------------------------------------------------------
 
+## Future Improvements
+
+*   **Tools by role**, as Alternative T describes.
+*   **A child's title in the transcript.** The line a parent's transcript shows for a courier
+    message is built from the sender's session id, for example `Message from ses_…`. The plugin
+    sets that line itself and has the child's title at that point. The line does not reach the
+    model: this was checked on OpenCode 2.3.0 with the scripted model. Showing the title changes
+    that one line, in the server part. It bears on `native`: the author keeps native children
+    for the readable "Subagent finished" line OpenCode writes for them, which a standalone child
+    lacks today.
+*   **`native`, `courier_cancel` and the typed-text copy** are each open to a design of their
+    own, with the real-model check's numbers in hand.
+
+--------------------------------------------------------------------------------
+
 ## Detailed Implementation Plan
 
-The file lists come from a search of every tracked file for each feature's names. Each step is one
-pull request. A file that several steps touch is listed under each of them, with that step's
-change. Every step also updates `test/__snapshots__/notices.test.ts.snap` and, where the terminal
-part changes, `test/__snapshots__/tui.test.tsx.snap`, by running `bun test --update-snapshots`
-after its text changes; they are not repeated below.
+**This plan is not ready to implement from.** A review against the code found it wrong in three
+ways that block, and it has not been corrected:
+
+*   **The file lists are not exact.** About fifteen files that must change are missing, among
+    them `test/notices.test.ts` in steps 3 and 4, `src/tree/index.ts` and `src/tree/standing.ts`
+    in step 1, and `e2e/mock-model.mjs` in step 5. About twenty listed files need no change.
+*   **Step 2 breaks tests it does not list and does not state the new rule.** Most unit fixtures
+    mark a running session through the fallback that step removes, in `test/limits.test.ts`,
+    `test/subtree.test.ts`, `test/panel.test.ts`, `test/summary.test.ts` and
+    `test/courier.test.ts`. Dropping step 2 is the likely answer.
+*   **Step 3.3 is wrong about `listChildren`.** The state lines do not use it. Its one caller is
+    the `courier_children` tool, so it is removed with the tool.
+
+The plan also leaves out text an implementer would have to write: the final wording of about ten
+reworded tool descriptions and strings, the two log lines for a removed option, and how the
+removed-name test collects the strings it checks. In the live suite, replacing `courier_children`
+with `courier_tree` changes the shape about 25 checks read, and several kept suite groups use a
+join group as their vehicle.
+
+Each step's exact file list and final strings are to be settled when that step is taken up,
+against the code as it then is. What follows is the outline to start from.
+
+The file lists come from a search of every tracked file for each feature's names, not from
+reading every file. A listed file mentions the feature; the implementer confirms each needs the
+change. Steps 1 to 5 are one pull request each, into the integration branch the order of work
+describes. A file that several steps touch is listed under each of
+them, with that step's change. Every step also updates `test/__snapshots__/notices.test.ts.snap`
+and, where the terminal part changes, `test/__snapshots__/tui.test.tsx.snap`, by running
+`bun test --update-snapshots` after its text changes; they are not repeated below.
 
 ### Target Files to Create/Modify
 
-### Step 0: the baseline
+### Model-facing strings, by step
 
-#### 0.1 `docs/maintainers/real-model.md` (Modify)
+These are the strings found by a search of `src/tree/text.ts`, `src/tree/cleanup.ts`,
+`src/tree/tui.tsx` and `src/skill.ts`. The test that step 4 adds is the check that none was
+missed.
 
-*   **Type / Scope**: Maintainer documentation.
-*   **Proposed Changes**: Replace every results table with one batch run on OpenCode 2.3.0 at the
-    commit before step 1: all ten scenarios (`fanout`, `recursive`, `recursive-fault`,
-    `recursive-staged`, `recursive-finding`, `recursive-conflict`, `discovery`, `review`,
-    `permission`, `question`), five runs each, on two models, described as "a self-hosted model"
-    and by the cloud model's public name. Each row gives passes of five, requests per run and
-    uncached input tokens per request. The "Running it" text names the two models as the floor
-    for every later comparison. No source file changes in this step.
+| String | Who reads it | What changes | Step |
+|---|---|---|---|
+| The top session's role line | The top session | Loses the instruction to call `courier_recall` once before splitting | 1 |
+| The `lessons` instruction entry | A session that may start others | No longer written | 1 |
+| The brief's rule on splitting | Every child that may start others | Loses `courier_children` from "do not poll with …" (step 3) and the sentence on what a group name is for (step 4) | 3, 4 |
+| The brief's rule on reporting | Every child | Loses the sentences on putting what other parts need in `finding`, and that a finding passes a held report | 4 |
+| The native sentence in a role line | A parent with a native child | Loses its clause on waiting for a group's reports | 4 |
+| The state-lines header and its overflow line | Every parent | `courier_children` becomes `courier_tree` in both; "a group's reports" goes | 3, 4 |
+| Each state line | Every parent | Loses the child's group and its standing in it | 4 |
+| The result of `courier_spawn` | The caller | "not on your `courier_children` list" names `courier_tree`; the text on a held report goes | 3, 4 |
+| The result of `courier_send` | The caller | Loses the text on a report held with a group and on a finding sent ahead | 4 |
+| The result of `courier_cleanup` and `courier_stop`, and the `courier_cleanup` error for a session that is not the caller's child | The caller | `courier_children` becomes `courier_tree`; the text on dropping a member from a group goes | 3, 4 |
+| The refusal at the tree-wide limit, for a session none of whose own children counts | The caller | "only reports already held for a group can still wake you" becomes "no report is still due to you" | 4 |
+| The failure notice, the ended-without-a-report notice, and the two notices about a stopped child | A parent | Lose their sentences on the child's join group | 4 |
+| The fork notice | A forked session | "`courier_children` lists none of them" names `courier_tree` | 3 |
+| The notice of a finding sent ahead, the notice of a complete group, the list of reports held so far | A parent | Removed whole | 4 |
+| The `courier-orchestrate` skill | A session that loads it | Loses the advice to call `courier_note` (step 1), the group rule and the sentence on a finding sent ahead (step 4) | 1, 4 |
+| The panel's confirmation before forgetting a row | The person | "this tree and `courier_children`" loses the tool name | 3 |
 
 ### Step 1: memory
 
@@ -580,9 +848,10 @@ after its text changes; they are not repeated below.
 *   **Type / Scope**: Composition root.
 *   **Proposed Changes**: Remove the memory import, the `memory` shared state, `readMemory`, the
     memory ports, `addMemoryTools`, `registerMemoryRpc`, `memoryEvents` in the event modules, the
-    record sweep, the listing of model context windows that only memory used, the `entries` port
+    sweep of old records that ran once at load, the listing of model context windows that only memory used, the `entries` port
     and the two tool names passed as `hiddenFromLeaf`. The teardown no longer touches memory
-    state.
+    state. Where option problems are logged at load, one line is logged when the `memory` option
+    is present in the config, saying the option and the feature are gone.
 
 #### 1.3 `src/rpc.ts`, `src/tui.tsx` (Modify)
 
@@ -590,14 +859,13 @@ after its text changes; they are not repeated below.
 *   **Proposed Changes**: Drop the re-export of the memory RPC contract and the registration of
     the memory view and its `/courier memory` command.
 
-#### 1.4 `src/tree/spawn.ts`, `src/tree/ports.ts`, `src/tree/context.ts`, `src/tree/fork.ts` (Modify)
+#### 1.4 `src/tree/spawn.ts`, `src/tree/ports.ts`, `src/tree/context.ts` (Modify)
 
 *   **Type / Scope**: Tree module.
 *   **Proposed Changes**: `spawn.ts` stops putting the `lessons` instruction entry. `ports.ts`
-    loses the `entries` and `hiddenFromLeaf` ports. `context.ts` loses the code that hides tools
-    from a leaf, and where it lists a session's instruction entries it removes a `lessons` entry
-    it finds, so a session started before the update stops being told about tools that are gone.
-    `fork.ts` removes `lessons` from a fork along with `role` and `standing`.
+    loses the `entries` and `hiddenFromLeaf` ports. In `context.ts` the statement that removes
+    tools from a session at the deepest level keeps removing `courier_spawn` and stops reading
+    the extra names. Nothing removes a `lessons` entry an existing session carries.
 
 #### 1.5 `src/tree/text.ts`, `src/skill.ts` (Modify)
 
@@ -614,11 +882,11 @@ after its text changes; they are not repeated below.
 
 *   **Type / Scope**: Unit tests.
 *   **Proposed Changes**: `plugin.test.ts` asserts the registered tools no longer include the two
-    memory tools and that a `memory` option is ignored. `imports.test.ts` drops the rules for
-    `memory/`. `store.test.ts` drops the pinned memory keys. `fork.test.ts` expects `lessons`
-    removed from a fork. `events.test.ts`, `limits.test.ts` and `tui.test.tsx` drop their memory
-    cases. `notices.test.ts` drops `memory/text.ts` from its list. A new case in the `context`
-    tests covers the removal of a stale `lessons` entry.
+    memory tools and that a `memory` option present in the config is not read and is logged once. `imports.test.ts` drops the rules for
+    `memory/`. `store.test.ts` drops the pinned memory keys. `fork.test.ts`, `events.test.ts`,
+    `limits.test.ts` and `tui.test.tsx` drop their memory and lessons cases; `limits.test.ts`
+    keeps the case that a session at the deepest level is not offered `courier_spawn`.
+    `notices.test.ts` drops `memory/text.ts` from its list.
 
 #### 1.8 `e2e/run.sh`, `e2e/mock-model.mjs`, `e2e/tui.sh`, `e2e/probe-plugin/index.js`, `test/e2e-shards.test.ts` (Modify)
 
@@ -635,13 +903,16 @@ after its text changes; they are not repeated below.
 #### 1.10 `e2e/real-model.sh`, `e2e/real-model-recursive.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `script/real-model-table.ts` (Modify)
 
 *   **Type / Scope**: Real-model harness.
-*   **Proposed Changes**: Remove the seeding of a record and the checks and table columns for
-    recall calls and lesson reads.
+*   **Proposed Changes**: `real-model.sh` loses the seeding of a record and its `COURIER_SEED`
+    switch. The checkers and the table script are not changed: they keep the recall columns and
+    the allowance for the top session's one `courier_recall`, as "The real-model check"
+    requires, until step 6.
 
 #### 1.11 `test/real-model-recursive.test.ts`, `test/real-model-review.test.ts`, `test/real-model-table.test.ts`, `test/fixtures/real-model/pass-a/summary.json`, `test/fixtures/real-model/fail-b/summary.json` (Modify)
 
 *   **Type / Scope**: Tests of the real-model checkers.
-*   **Proposed Changes**: Drop the recall and lesson fields and their cases.
+*   **Proposed Changes**: Only the cases that seed a record go. The recall and lesson fields
+    stay until step 6, since the checkers still report them for runs of main.
 
 #### 1.12 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md`, `CLAUDE.md`, `.claude/skills/opencode-release/SKILL.md` (Modify)
 
@@ -650,36 +921,33 @@ after its text changes; they are not repeated below.
     tools table, `/courier memory` and the memory sentence. Reference: remove the Memory section
     and its links. Architecture: remove the memory bullets and the `lessons` entry, and replace
     the three `memory/` storage rows with one sentence that releases up to 0.16.4 wrote those
-    keys and nothing reads them now. Real-model: remove "Seeding a record". `CLAUDE.md`: remove
-    `memory/` from the layout and the import rule. The release skill: remove its memory mention.
+    keys and nothing reads them. Plugin-api-notes: remove the note on the memory view's select
+    rows. Real-model: remove "Seeding a record". `CLAUDE.md`: remove `memory/` from the layout
+    and the import rule. The release skill: remove its memory mention.
 
-### Step 2: paths for older hosts
+### Step 2: the branches for a host without a `busy` time
 
-#### 2.1 `src/index.ts`, `src/tree/ports.ts`, `src/tree/spawn.ts`, `src/tree/standing.ts`, `src/tree/fork.ts` (Modify)
-
-*   **Type / Scope**: Composition root and tree module.
-*   **Proposed Changes**: The `instructions` port is required on a host context: the cast in
-    `index.ts` goes and the three files call it without checking for it. It stays optional on the
-    hub member type, because an older copy of the plugin in the same process may lack it.
-
-#### 2.2 `src/tree/domain.ts`, `src/tree/running.ts`, `src/tree/wake.ts` (Modify)
+#### 2.1 `src/tree/domain.ts`, `src/tree/running.ts`, `src/tree/wake.ts` (Modify)
 
 *   **Type / Scope**: Session-state logic.
 *   **Proposed Changes**: Remove the branch that decides whether a session runs when `time.busy`
-    is absent, and the matching branch in the re-send logic.
+    is absent, and the matching branch in the re-send logic. A session with `idle` set and no
+    `busy` reads as idle. No check for a missing instructions port is touched, in any file.
 
-#### 2.3 `test/limits.test.ts`, `test/standing.test.ts`, `test/watch.test.ts`, `test/wake.test.ts` (Modify)
+#### 2.2 `test/limits.test.ts`, `test/watch.test.ts`, `test/wake.test.ts` (Modify)
 
 *   **Type / Scope**: Unit tests.
-*   **Proposed Changes**: Remove the cases for a host without `instructions` and for a session
-    without `busy`.
+*   **Proposed Changes**: Remove the cases that read a running session from `updated` when `busy`
+    is absent. One case stays and changes its expectation: a session with `idle` and no `busy`
+    reads as idle. The cases for a missing instructions port stay as they are.
 
-#### 2.4 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/plugin-api-notes.md`, `e2e/run.sh` (Modify)
+#### 2.3 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/plugin-api-notes.md`, `e2e/run.sh` (Modify)
 
-*   **Type / Scope**: Documentation and a live-suite comment-free assertion.
+*   **Type / Scope**: Documentation and the live suite.
 *   **Proposed Changes**: Replace "the server part loads on any V2 host from 2.0.4 on" with the
-    pinned version alone, and say a different host gets one log line. Remove the sentences about
-    hosts before 2.2.0 and 2.2.2. `run.sh` drops any check that names an older host.
+    pinned version alone, and say a different host gets one log line. Remove the sentences and
+    notes about a host before 2.2.2 and its missing `busy` time. `run.sh` drops any check that
+    names that case.
 
 ### Step 3: the small cuts
 
@@ -698,109 +966,99 @@ after its text changes; they are not repeated below.
 #### 3.3 `src/tree/text.ts`, `src/tree/status.ts`, `src/tree/cleanup.ts`, `src/tree/standing.ts` (Modify)
 
 *   **Type / Scope**: Tree module.
-*   **Proposed Changes**: Remove `childrenText` and the refusal text for `maxChildren`; the role
-    text states only the tree-wide limit. `status.ts` keeps `listChildren`, which the state lines
-    use, and loses what only the tool's output needed. Notices in `cleanup.ts` and `standing.ts`
-    name `courier_tree`.
+*   **Proposed Changes**: Remove `childrenText`. `status.ts` keeps `listChildren`, which the state
+    lines use, and loses what only the tool's output needed. Notices in `cleanup.ts` and
+    `standing.ts` name `courier_tree`.
 
-#### 3.4 `src/tree/domain.ts`, `src/tree/limits.ts`, `src/tree/index.ts` (Modify)
-
-*   **Type / Scope**: Limits and options.
-*   **Proposed Changes**: `Limits` and its defaults lose `maxChildren`; `readLimits` ignores the
-    option. `limits.ts` loses the per-session check. `readNativeChildren` is deleted and its
-    export removed.
-
-#### 3.5 `src/index.ts`, `src/tree/ports.ts`, `src/tree/spawn.ts`, `src/tree/context.ts` (Modify)
+#### 3.4 `src/index.ts`, `src/tree/domain.ts`, `src/tree/index.ts`, `src/tree/ports.ts`, `src/tree/spawn.ts`, `src/tree/context.ts` (Modify)
 
 *   **Type / Scope**: The `nativeChildren` option.
-*   **Proposed Changes**: Remove the option's reading and the two port fields. In `spawn.ts` a
-    child is native when `native` is `true` and it is not isolated, and the role line about
-    OpenCode's turn-end message is put at a parent's first native spawn only. In `context.ts`
-    that line is added only for a session that has a native child.
+*   **Proposed Changes**: `readNativeChildren` no longer yields a setting. It returns a problem
+    string when the option is present in the config, and `index.ts` logs it at load with the
+    other option problems. The two port fields go. In `spawn.ts` a child is native when `native` is `true` and it is
+    not isolated, and the role line about OpenCode's turn-end message is put at a parent's first
+    native spawn only. In `context.ts` that line is added only for a session that has a native
+    child.
 
-#### 3.6 `src/tree/tui.tsx` (Modify)
+#### 3.5 `src/tree/tui.tsx` (Modify)
 
 *   **Type / Scope**: Terminal part.
 *   **Proposed Changes**: Remove the `/courier stop` command branch and its part of the usage
     line. The `s` key in the panel is unchanged.
 
-#### 3.7 `test/courier.test.ts`, `test/cleanup.test.ts`, `test/fork.test.ts`, `test/limits.test.ts`, `test/plugin.test.ts`, `test/standing.test.ts`, `test/stop.test.ts`, `test/summary.test.ts`, `test/tui.test.tsx`, `test/real-model.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-review.test.ts` (Modify)
+#### 3.6 `test/courier.test.ts`, `test/cleanup.test.ts`, `test/fork.test.ts`, `test/limits.test.ts`, `test/plugin.test.ts`, `test/standing.test.ts`, `test/summary.test.ts`, `test/tui.test.tsx`, `test/real-model.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-review.test.ts` (Modify)
 
 *   **Type / Scope**: Unit tests.
-*   **Proposed Changes**: Remove the cases for `courier_children`, `queue`, `maxChildren`, the
-    `nativeChildren` option and `/courier stop`. Add: a session may start more than five children
-    up to `maxTotal`; a set `maxChildren` or `nativeChildren` option is ignored; a child is native
-    only with `native: true`. The checker tests keep "a listing call after a spawn is polling"
-    with `courier_tree` as the only listing tool.
+*   **Proposed Changes**: Remove the cases for `courier_children`, `queue`, the `nativeChildren`
+    option and `/courier stop`. Add: a `nativeChildren` option present in the config is not read and is logged once; a child is native
+    only with `native: true`; a `queue` a model passes is ignored. The checker tests keep "a
+    listing call after a spawn is polling" for both listing tool names.
 
-#### 3.8 `e2e/run.sh`, `e2e/mock-model.mjs`, `e2e/tui.sh`, `e2e/real-model.sh`, `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `e2e/real-model-permission.mjs`, `e2e/real-model-question.mjs`, `test/e2e-shards.test.ts` (Modify)
+#### 3.7 `e2e/run.sh`, `e2e/mock-model.mjs`, `e2e/tui.sh`, `e2e/real-model.sh`, `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `e2e/real-model-permission.mjs`, `e2e/real-model-question.mjs`, `test/e2e-shards.test.ts` (Modify)
 
 *   **Type / Scope**: Live suite and real-model harness.
-*   **Proposed Changes**: `run.sh`: the `rolling-slot` group is rewritten against `maxTotal`; the
-    `native` and `spawn-native` groups stop turning the option on and rely on the mock passing
-    `native: true`; calls to `courier_children` become `courier_tree`. The mock drops the
-    `native: false` pins that existed only because the option stayed on for later groups.
-    `tui.sh` drops the `/courier stop` checks. `real-model.sh` loses `COURIER_NATIVE`; the
-    permission and question checkers lose their branch for it. The checkers' polling rule lists
-    `courier_tree` only.
+*   **Proposed Changes**: `run.sh`: the `native` and `spawn-native` groups stop turning the option
+    on and rely on the mock passing `native: true`; calls to `courier_children` become
+    `courier_tree`. The mock drops the `native: false` pins that existed only because the option
+    stayed on for later groups. `tui.sh` drops the `/courier stop` checks. `real-model.sh` loses
+    `COURIER_NATIVE`; the permission and question checkers lose their branch for it. The native
+    variants of those two scenarios are no longer run with a real model; the live suite covers
+    native children. The
+    checkers are not changed: their rule that a listing call after a spawn is polling keeps
+    naming both `courier_tree` and `courier_children`.
 
-#### 3.9 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/development.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md`, `CLAUDE.md` (Modify)
+#### 3.8 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/development.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md`, `CLAUDE.md` (Modify)
 
 *   **Type / Scope**: Documentation.
-*   **Proposed Changes**: README: options table without `maxChildren` and `nativeChildren`, tools
-    table without `courier_children`, terminal list without `/courier stop`, and the "Why
-    courier" opening corrected to say the host tool also runs in the background and wakes an idle
-    parent at a child's turn end. Reference: the same removals, `queue` removed from
-    `courier_send`, native children described as a per-spawn choice. Architecture and
-    `CLAUDE.md`: the `role` entry's native line is put at a first native spawn, with no option.
-    Development and real-model: no `COURIER_NATIVE`.
+*   **Proposed Changes**: README: options table without `nativeChildren`, tools table without
+    `courier_children`, terminal list without `/courier stop`, and the opening of "Why courier"
+    corrected to say the host tool also runs in the background and wakes an idle parent at a
+    child's turn end. Reference: the same removals, `queue` removed from `courier_send`, native
+    children described as a per-spawn choice. Architecture and `CLAUDE.md`: the `role` entry's
+    native line is put at a first native spawn, with no option. Development and real-model: no
+    `COURIER_NATIVE`.
 
-### Step 4: groups, step one
+### Step 4: groups and `finding`
 
-#### 4.1 `src/tree/tools.ts` (Modify)
+#### 4.1 `src/tree/group.ts` (Delete), `test/group.test.ts` (Delete)
+
+*   **Type / Scope**: The group use case and its test.
+*   **Proposed Changes**: Delete.
+
+#### 4.2 `src/tree/tools.ts` (Modify)
 
 *   **Type / Scope**: Tool definitions.
 *   **Proposed Changes**: Remove `group` from the spawn schema and `finding` from the send schema.
     Remove the group and finding sentences from the descriptions of `courier_spawn`,
-    `courier_send` and `courier_cleanup`.
+    `courier_send` and `courier_cleanup`. `courier_spawn` keeps its advice to schedule a
+    check-in and to cancel it, without "one per group".
 
-#### 4.2 `src/tree/spawn.ts`, `src/tree/send.ts` (Modify)
+#### 4.3 `src/tree/spawn.ts`, `src/tree/send.ts` (Modify)
 
 *   **Type / Scope**: Spawn and send use cases.
 *   **Proposed Changes**: `spawn.ts` no longer joins a child to a group or stores `group` on its
     roster entry. `send.ts` loses the holding of a report, the early delivery of a finding and
     the release of a held report on `blocked`; every report is delivered at once.
 
-#### 4.3 `src/tree/group.ts` (Modify)
-
-*   **Type / Scope**: Group use case, reduced to the drain.
-*   **Proposed Changes**: Keep one exported tick job, `drainHeld(ports, claimed)`: read every
-    `group/` entry, group them by parent and name, and for each set with at least one held report
-    not already claimed, claim it under `group:<parentID>/<name>`, send the parent one message
-    with the held reports in today's group wording, remove the set's entries, sync the parent's
-    state lines and release the claim. A set with no held report has its entries removed without
-    a message. A parent that no longer exists has its set removed and one line logged. Everything
-    else in the file is deleted.
-
 #### 4.4 `src/index.ts`, `src/tree/index.ts` (Modify)
 
 *   **Type / Scope**: Composition root and module surface.
-*   **Proposed Changes**: The tick jobs are `dueJob`, `drainHeld`, `wakeMissed`.
-    `deliverReleased` is no longer exported.
+*   **Proposed Changes**: The tick jobs are `dueJob` and `wakeMissed`. `deliverReleased` is no
+    longer exported. The hub version constant is not changed.
 
 #### 4.5 `src/tree/domain.ts`, `src/tree/ports.ts`, `src/tree/store.ts`, `src/tree/roster.ts` (Modify)
 
 *   **Type / Scope**: Tree types and storage.
-*   **Proposed Changes**: Keep the held-report type and the group store's `all` and `remove`;
-    delete membership standing, completeness, `put` and the per-parent reads. A roster entry's
-    `group` field stays readable for old entries and is never written.
+*   **Proposed Changes**: Delete the held-report and membership types, the group ports, the group
+    store and its key prefix. A roster entry's `group` field stays in the type as optional, for
+    entries written earlier, and is never written or read.
 
 #### 4.6 `src/tree/standing.ts`, `src/tree/status.ts`, `src/tree/summary.ts`, `src/tree/panel.ts`, `src/tree/rpc.ts`, `src/tree/rpc-handlers.ts`, `src/tree/tui.tsx` (Modify)
 
 *   **Type / Scope**: State lines, listings and the terminal part.
 *   **Proposed Changes**: Remove each child's group and group standing from the state lines, the
-    tree listing, the summary, the panel rows and the footer. The summary RPC keeps its `groups`
-    field as an empty list, so an older terminal part reading a newer server does not fail.
+    tree listing, the summary, the panel rows and the footer. The summary and tree RPCs lose
+    their group fields; the terminal part of the same release does not read them.
 
 #### 4.7 `src/tree/cleanup.ts`, `src/tree/forget.ts`, `src/tree/nudge.ts`, `src/tree/events.ts`, `src/tree/stop.ts`, `src/tree/wake.ts` (Modify)
 
@@ -812,227 +1070,82 @@ after its text changes; they are not repeated below.
 #### 4.8 `src/tree/text.ts`, `src/skill.ts`, `src/scheduling/tools.ts`, `src/person/rpc.ts`, `src/person/rpc-handlers.ts`, `src/person/tui.tsx` (Modify)
 
 *   **Type / Scope**: Model-facing strings and the asks inbox.
-*   **Proposed Changes**: `text.ts` keeps the wording of a delivered group, for the drain, and
-    loses the held, out and finding wording. The skill loses its group rule and its finding
-    sentence; "pass what a report says on to the parts it changes" stays, worded for a plain
-    report. `courier_later`'s description loses "one per group". The asks inbox drops the group a
-    waiting session belongs to.
+*   **Proposed Changes**: `text.ts` loses all group wording, the finding-ahead wording and the
+    brief's sentence that a report's finding reaches the parent ahead of a held report. The
+    brief's rule to send what other parts need to the parent without a status stays. The skill
+    loses its group rule and its sentences on the `finding` parameter; "pass what a report says
+    on to the parts it changes" stays. `courier_later`'s description loses "one per group". The
+    asks inbox drops the group a waiting session belongs to.
 
-#### 4.9 `test/group.test.ts` (Modify)
-
-*   **Type / Scope**: Unit test.
-*   **Proposed Changes**: Rewritten for `drainHeld`: a complete set is delivered once; an
-    incomplete set is delivered with what is held; a set with nothing held is removed silently; a
-    set claimed by another copy is skipped; a failed delivery keeps the entries for the next
-    tick; a missing parent drops the set.
-
-#### 4.10 `test/courier.test.ts`, `test/cleanup.test.ts`, `test/hub.test.ts`, `test/inbox.test.tsx`, `test/limits.test.ts`, `test/nudge.test.ts`, `test/panel.test.ts`, `test/person-rpc.test.ts`, `test/plugin.test.ts`, `test/roster.test.ts`, `test/standing.test.ts`, `test/stop.test.ts`, `test/store.test.ts`, `test/summary.test.ts`, `test/tui.test.tsx`, `test/watch.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-review.test.ts`, `test/real-model-table.test.ts` (Modify)
+#### 4.9 `test/courier.test.ts`, `test/cleanup.test.ts`, `test/hub.test.ts`, `test/inbox.test.tsx`, `test/limits.test.ts`, `test/nudge.test.ts`, `test/panel.test.ts`, `test/person-rpc.test.ts`, `test/plugin.test.ts`, `test/roster.test.ts`, `test/standing.test.ts`, `test/stop.test.ts`, `test/store.test.ts`, `test/summary.test.ts`, `test/tui.test.tsx`, `test/watch.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-review.test.ts`, `test/real-model-table.test.ts` (Modify)
 
 *   **Type / Scope**: Unit tests.
 *   **Proposed Changes**: Remove the group and finding cases. `courier.test.ts` adds: a `group` or
-    `finding` passed by a model is ignored and the child reports by itself. `hub.test.ts` covers
-    an old copy's release job and a new copy's drain claiming the same set.
+    `finding` passed by a model is ignored and the child's report is delivered alone.
+    `test/notices.test.ts` adds the check that no model-facing string and no tool description
+    contains a removed name, as "Model-facing text that changes" lists them. `store.test.ts` adds:
+    a `group/` entry in storage is not read and not removed.
 
-#### 4.11 `e2e/run.sh`, `e2e/mock-model.mjs`, `e2e/tui.sh`, `e2e/kv.ts`, `test/e2e-shards.test.ts` (Modify)
+#### 4.10 `e2e/run.sh`, `e2e/mock-model.mjs`, `e2e/tui.sh`, `test/e2e-shards.test.ts` (Modify)
 
 *   **Type / Scope**: Live suite.
 *   **Proposed Changes**: Remove the `reports-groups`, `finding`, `finding-up` and
-    `decline-seal` groups. Add a `group-drain` group: write a held report under `group/` with
-    `kv.ts` before the server starts, start it, and check the parent is woken once with the
-    report and the entry is gone. The mock's scenarios lose their `group` arguments. `tui.sh`'s
-    first scenario runs two ungrouped children; its footer and row checks lose the group text.
+    `decline-seal` groups. The `reports` group adds a spawn that passes `group` and checks the
+    child's report arrives by itself. The mock's other scenarios lose their `group` arguments.
+    `tui.sh`'s first scenario runs two ungrouped children; its footer and row checks lose the
+    group text.
 
-#### 4.12 `e2e/real-model.sh`, `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-recursive-release.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `script/real-model-table.ts` (Modify)
+#### 4.11 `e2e/real-model.sh`, `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-recursive-release.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `script/real-model-table.ts` (Modify)
 
 *   **Type / Scope**: Real-model harness.
-*   **Proposed Changes**: Remove the checks that a report was held or released with a group and
-    that a finding went ahead. `discovery` and `recursive-finding` check instead that the report
-    carrying the value reached the parent and that the parent passed it on.
+*   **Proposed Changes**: No checker changes in this step. Every allowance for a held report, a
+    finding sent ahead or a look at a held report stays, so one checker scores main and
+    the integration branch. Only what the harness can no longer set is removed from
+    `real-model.sh`. Step 6 removes the allowances no run can use any more.
 
-#### 4.13 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/development.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md`, `CLAUDE.md` (Modify)
+#### 4.12 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/development.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md`, `CLAUDE.md` (Modify)
 
 *   **Type / Scope**: Documentation.
 *   **Proposed Changes**: README: no join group in "Why courier", "How it works", the tools row or
-    the footer example; the demo caption is rewritten in step 9. Reference: the "Join groups"
-    section is replaced by a short "Held group reports" section that says a report held by an
-    earlier release is delivered at the next scheduler tick. Architecture: the `group/` row says
-    it is read only to deliver what is held. Plugin-api-notes: the note on reading a decline from
-    the transcript goes. `CLAUDE.md`: "groups" leaves the layout line.
+    the footer example. Reference: the "Join groups" section and every link to it go.
+    Architecture: the `group/` row is replaced by one sentence that releases up to 0.16.4 wrote
+    the key and nothing reads it. Plugin-api-notes: the note on reading a decline from the
+    transcript goes. `CLAUDE.md`: "groups" leaves the layout line.
 
-### Step 5: `courier_cancel`
+### Step 5: the demo
 
-#### 5.1 `src/scheduling/tools.ts`, `src/scheduling/text.ts` (Modify)
-
-*   **Type / Scope**: Scheduling tools and strings.
-*   **Proposed Changes**: Remove the `courier_cancel` tool. `courier_later`'s description says a
-    message a session schedules for itself is removed once the last session it started has
-    reported, failed, ended or been stopped. Its result text no longer mentions an id to cancel.
-
-#### 5.2 `src/scheduling/later.ts`, `src/scheduling/index.ts` (Modify)
-
-*   **Type / Scope**: Scheduling use case.
-*   **Proposed Changes**: Add `dropCheckIns(ports, sessionID)`: remove every pending entry whose
-    `from` and `sessionID` both equal the given session, and return the removed ids. Export it.
-    `cancel` stays, for `cancelScheduled`.
-
-#### 5.3 `src/index.ts`, `src/tree/ports.ts`, `src/tree/standing.ts` (Modify)
-
-*   **Type / Scope**: Composition root and state lines.
-*   **Proposed Changes**: `index.ts` passes `dropCheckIns` to the tree's ports, bound to the
-    scheduling ports. `ports.ts` declares it as an optional port. `standing.ts`, after it has
-    computed a parent's children, calls it when the parent has at least one child and none owes
-    a report; a failure is logged and does not fail the sync.
-
-#### 5.4 `src/tree/tools.ts`, `src/tree/text.ts`, `src/tree/stop.ts` (Modify)
-
-*   **Type / Scope**: Model-facing strings.
-*   **Proposed Changes**: `courier_spawn`'s description says a check-in is removed when the last
-    report arrives, in place of the instruction to cancel it. Notices that named
-    `courier_cancel` lose the name.
-
-#### 5.5 `test/later.test.ts`, `test/standing.test.ts`, `test/plugin.test.ts`, `test/hub.test.ts`, `test/fixtures/two-copies.ts`, `test/nudge.test.ts`, `test/panel.test.ts`, `test/stop.test.ts`, `test/watch.test.ts`, `test/imports.test.ts` (Modify)
-
-*   **Type / Scope**: Unit tests.
-*   **Proposed Changes**: `later.test.ts`: the cancel-tool cases go; `dropCheckIns` removes only
-    self-addressed entries. `standing.test.ts`: the port is called when the last child settles by
-    each route (report, failure, silent end, stop, cleanup), not while one still owes, not for a
-    session with no children, and not when the port is absent. The rest update fake ports and
-    tool lists.
-
-#### 5.6 `e2e/run.sh`, `e2e/mock-model.mjs`, `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-review.mjs`, `test/e2e-shards.test.ts` (Modify)
-
-*   **Type / Scope**: Live suite and real-model harness.
-*   **Proposed Changes**: The `later` group drops its cancel checks. The `own-checkin` group
-    checks that a parent's check-in is gone from storage after its child's report and never
-    arrives; it waits on the report, then reads the key once. The checkers stop expecting a
-    `courier_cancel` call.
-
-#### 5.7 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `CLAUDE.md`, `docs/social-preview.py`, `docs/social-preview.png` (Modify)
-
-*   **Type / Scope**: Documentation and the preview image.
-*   **Proposed Changes**: Tools table and "Scheduled messages" without `courier_cancel`, with the
-    drop rule and its side effect on other self-scheduled messages. The preview script's tool
-    list is corrected and the image rendered again.
-
-### Step 6: titles in the transcript
-
-#### 6.1 `src/tree/text.ts` (Modify)
-
-*   **Type / Scope**: Strings.
-*   **Proposed Changes**: Add the description builders: `<title> reported <status>`, `<title> sent
-    progress`, `Message from <title or id>`, `<title> failed`, `<title> ended without a report`.
-    A title is clipped to 60 characters; a missing title falls back to the session id.
-
-#### 6.2 `src/tree/send.ts`, `src/tree/events.ts`, `src/tree/nudge.ts` (Modify)
-
-*   **Type / Scope**: Tree use cases.
-*   **Proposed Changes**: Use the builders where a description is built from a session id today.
-    `send.ts` reads the sender's roster entry, which it already has when the sender is a child of
-    the target. The envelope text is unchanged.
-
-#### 6.3 `src/person/text.ts`, `src/person/events.ts`, `src/person/form.ts` (Modify)
-
-*   **Type / Scope**: Person module.
-*   **Proposed Changes**: The four descriptions for a permission request and a form carry the
-    child's title, read through `tree/index.ts`.
-
-#### 6.4 `test/courier.test.ts`, `test/limits.test.ts`, `test/store.test.ts`, `test/wake.test.ts`, `test/tui.test.tsx`, `test/person.test.ts`, `test/permission.test.ts` (Modify)
-
-*   **Type / Scope**: Unit tests.
-*   **Proposed Changes**: Expect the new descriptions; add a clipped title and a missing title.
-
-#### 6.5 `e2e/run.sh`, `e2e/tui.sh`, `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `e2e/real-model-permission.mjs`, `e2e/real-model-question.mjs`, `script/record-gif.sh` (Modify)
-
-*   **Type / Scope**: Live suite, real-model harness and the demo script.
-*   **Proposed Changes**: Every match on `Message from ses_` or `Session ses_` in a description
-    follows the new wording. `tui.sh` adds a check that the parent's view shows `<title> reported
-    done`.
-
-#### 6.6 `docs/reference.md`, `docs/maintainers/plugin-api-notes.md` (Modify)
-
-*   **Type / Scope**: Documentation.
-*   **Proposed Changes**: The reference states what each transcript line reads. The notes record
-    whether a message's `description` reaches the model, once checked.
-
-### Step 7: steering
-
-#### 7.1 `src/tree/relay.ts` (Delete)
-
-*   **Type / Scope**: The copy of typed text up the tree.
-*   **Proposed Changes**: Delete.
-
-#### 7.2 `src/tree/events.ts`, `src/tree/ports.ts`, `src/tree/store.ts`, `src/tree/roster.ts`, `src/tree/text.ts`, `src/skill.ts` (Modify)
-
-*   **Type / Scope**: Tree module and the skill.
-*   **Proposed Changes**: `events.ts` loses the two calls into the relay. The child store loses
-    its `typed` functions and prefix, and `roster.ts` loses the prune of orphaned typed entries.
-    `text.ts` loses the typed-text notice. The skill loses the sentence that explains it.
-
-#### 7.3 `test/watch.test.ts`, `test/store.test.ts`, `test/inbox.test.tsx`, `test/imports.test.ts`, `test/tui.test.tsx`, `test/real-model-recursive.test.ts` (Modify)
-
-*   **Type / Scope**: Unit tests.
-*   **Proposed Changes**: Remove the relay cases and the pinned `typed/` key. `watch.test.ts` adds:
-    a prompt typed into a spawned session enqueues nothing for the sessions above it.
-
-#### 7.4 `e2e/run.sh`, `e2e/tui.sh`, `e2e/two-servers.sh`, `e2e/real-model.sh`, `e2e/real-model-recursive.mjs`, `e2e/real-model-recursive-release.mjs`, `test/e2e-shards.test.ts` (Modify)
-
-*   **Type / Scope**: Live suite and real-model harness.
-*   **Proposed Changes**: The `person-up` and `person-message` groups are replaced by one group in
-    which the typed text asks the child to tell its parent and the parent is woken by the child's
-    `courier_send`. `recursive-finding` and `recursive-conflict` type the same request into the
-    child and check the parent passed it on. `two-servers.sh` and `tui.sh` drop what they assert
-    about copied text.
-
-#### 7.5 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/development.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md` (Modify)
-
-*   **Type / Scope**: Documentation.
-*   **Proposed Changes**: The README tip and the reference's "Steering a running tree" say: type
-    into the child and ask it to tell its parent. Architecture: the `typed/` row goes, with one
-    sentence that earlier releases wrote the key. Real-model: the two scenarios' descriptions and
-    their new rows.
-
-### Step 8: groups, step two
-
-#### 8.1 `src/tree/group.ts` (Delete), `test/group.test.ts` (Delete)
-
-*   **Type / Scope**: The drain job and its test.
-*   **Proposed Changes**: Delete.
-
-#### 8.2 `src/index.ts`, `src/tree/index.ts`, `src/tree/domain.ts`, `src/tree/ports.ts`, `src/tree/store.ts`, `src/tree/text.ts`, `src/tree/rpc.ts` (Modify)
-
-*   **Type / Scope**: What the drain kept alive.
-*   **Proposed Changes**: Two tick jobs remain. The held-report type, the group store, the group
-    prefix, the delivered-group wording and the summary's empty `groups` field are removed.
-
-#### 8.3 `test/hub.test.ts`, `test/store.test.ts`, `test/summary.test.ts`, `e2e/run.sh`, `test/e2e-shards.test.ts` (Modify)
-
-*   **Type / Scope**: Tests.
-*   **Proposed Changes**: Remove the drain cases and the `group-drain` live group.
-
-#### 8.4 `docs/reference.md`, `docs/maintainers/architecture.md` (Modify)
-
-*   **Type / Scope**: Documentation.
-*   **Proposed Changes**: Remove "Held group reports". The storage table's `group/` row becomes
-    one sentence that earlier releases wrote the key and nothing reads it.
-
-### Step 9: the demo
-
-#### 9.1 `script/record-gif.sh`, `script/demo-lib.sh`, `script/render-gif.py`, `docs/demo.gif`, `README.md` (Modify)
+#### 5.1 `script/record-gif.sh`, `script/demo-lib.sh`, `script/render-gif.py`, `docs/demo.gif`, `README.md` (Modify)
 
 *   **Type / Scope**: Demo recording.
-*   **Proposed Changes**: The demo's two leads report one by one, with no group. The GIF is
-    recorded again and the README caption and alt text describe what it shows.
+*   **Proposed Changes**: The demo shows a top session with two sessions under it that each
+    run two workers. Those two sessions report one by one, with no group. The GIF is
+    recorded again in a cloud session, since it cannot be recorded on the author's machine, and
+    the README caption and alt text describe what it shows. This pull request merges before the
+    release is cut.
 
-### Releases
+### Step 6: the checkers, after the release
 
-#### R.1 `package.json`, `README.md`, `docs/reference.md` (Modify)
+#### 6.1 `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-recursive-release.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `script/real-model-table.ts`, `test/real-model.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-review.test.ts`, `test/real-model-table.test.ts`, `test/fixtures/real-model/pass-a/summary.json`, `test/fixtures/real-model/fail-b/summary.json` (Modify)
 
-*   **Type / Scope**: Version and the generated compatibility tables.
-*   **Proposed Changes**: Release A sets the version to 0.17.0 after steps 1 to 6; release B
-    follows step 7; step 8 ships in the first release after the next pin bump. The version tables
-    are regenerated by `script/compat-table.ts`, never edited by hand. Each release follows
-    `docs/maintainers/releasing.md`, and release A's notes list every removed tool, parameter,
-    option and command with what to do in its place.
+*   **Type / Scope**: Real-model checkers and their tests.
+*   **Proposed Changes**: Once 0.17.0 is released and `real-model.md` holds its tables, remove
+    what no run can use any more: the allowances for a report held in a group, a finding sent
+    ahead, a look through `courier_children` and the top session's `courier_recall`, with the
+    notes and table columns for groups, findings, recall calls and lesson reads. This is one
+    pull request to main and changes no plugin code.
+
+### The release
+
+#### R.1 `package.json`, `README.md`, `docs/reference.md`, `docs/maintainers/real-model.md` (Modify)
+
+*   **Type / Scope**: Version, the generated compatibility tables and the result tables.
+*   **Proposed Changes**: After the author has decided on the real-model check's numbers, one pull
+    request takes the integration branch to main and the version becomes 0.17.0.
+    The version tables are regenerated by `script/compat-table.ts`, never edited by hand. The
+    tables in `real-model.md` are replaced by the branch's side of the real-model check, and its
+    "Running it" text describes the check as this design does. The release follows
+    `docs/maintainers/releasing.md`. Its notes list every removed tool, parameter, option and
+    command with what to do in its place, and say to let running trees finish before updating.
 
 ### Verification Plan
 
@@ -1044,17 +1157,17 @@ after its text changes; they are not repeated below.
 *   **Test Coverage Requirement**: No numeric bar. Every changed behaviour has a unit test and a
     live scenario, as `CLAUDE.md` requires.
 *   **E2E/Integration**: `npm run test:e2e` in four shards and `e2e/tui.sh`, both in CI on every
-    pull request; `e2e/two-servers.sh` on steps 4, 5 and 7.
-*   **Real model**: `e2e/real-model.sh` in the sandbox. Step 0 runs all ten scenarios, five runs
-    each on both models. Each later step that changes a model-facing string runs the scenarios it
-    touches, five runs each on both models, and puts the result in its pull request. After step 7
-    the whole suite runs once and replaces the tables in `real-model.md`.
-*   **Pass criteria**: For each scenario and model, passes of five are no lower than the
-    baseline's. Requests per run and uncached input tokens per request are no higher than the
-    baseline's mean. A step that misses is not merged.
-*   **Manual check**: After step 6, one parent with one native and one standalone child in the
-    terminal: both rows show `✓` in the panel and both reports show the child's title in the
-    parent's transcript.
+    pull request; `e2e/two-servers.sh` on step 4, because that step removes one of the
+    scheduler's periodic jobs and the script checks that two servers on one data directory do
+    not deliver a message twice.
+*   **Real model**: Main against the integration branch, reported and decided as "The
+    real-model check" says. Steps 1, 3 and 4 change model-facing strings, so each of their pull
+    requests carries one `e2e/real-model.sh` run in its body.
+*   **Counts**: The characters of all tool descriptions and schemas on the integration branch
+    against main, taken with the real-model check.
+*   **Manual check**: With a config that sets `memory`, `nativeChildren` and `maxChildren`, the
+    plugin loads and logs one line for each of the first two, a sixth live child of one session is refused (the default limit is five), and a
+    child is native only when its spawn asks.
 
 --------------------------------------------------------------------------------
 

@@ -27,24 +27,58 @@ PR itself and merges.
   the branches of `decide()` in `e2e/mock-model.mjs`.
 - **Hold** an issue that needs something only the owner has: an API key, an account, a decision
   to publish or spend. Say what is needed instead of spawning.
-- Keep a roster in the scratchpad (issue, session id, branch, PR, state, the owner's decisions
-  and merge go verbatim with their time). Read it first on every check-in; it outlives a
+- **Choose a model and an effort for each issue**, by section 2's table, and give the owner the
+  choices with one line of reason each before spawning. A choice the owner names wins.
+- Keep a roster in the scratchpad (issue, model, effort and the reason for both, session id,
+  branch, PR, state, the owner's decisions and merge go verbatim with their time). Read it first on every check-in; it outlives a
   compaction. If it is lost, rebuild it from the repo's PRs and `list_sessions`, matching the
   wave tag yourself.
 
-## 2. Spawn
+## 2. Model and effort
+
+A child's model and effort follow from what its issue asks of it, not from its size in lines.
+Read the issue and the code it names, then take the first row that fits:
+
+| The issue | Model | Effort |
+|---|---|---|
+| Changes the hub, the scheduler's jobs, a storage key or what two loaded copies share; or crosses three or more modules; or leaves a design decision open | Fable 5.2 (`claude-fable-5-2`) | high |
+| Has a settled design and touches several files of one or two modules, with tests and a live scenario; or rewords a model-facing string | Opus 5.5 (`claude-opus-5-5`) | high |
+| Is mechanical with an exact list of files: documentation, a rename, a script, a recording, a one-file fix | Sonnet 5.5 (`claude-sonnet-5-5`) | medium |
+
+What moves an issue one row up:
+
+- its design calls its own file list unverified, so the child has to find the files;
+- it changes the live suite beyond its own group: checks other groups read, the shard balance,
+  the order of groups;
+- it removes code other code may still call, so the child has to decide what became dead;
+- it must work with a session or a stored value written by the release before it.
+
+What keeps it where it is: many files of the same kind of change. A module deleted whole is
+large and still mechanical.
+
+Effort above high, and a model below Sonnet 5.5 for product code, are the owner's to name.
+
+The reason goes in the roster in one line that names the row and what moved it, for example
+"Opus 5.5, high: settled design, rewords tool descriptions; up one row for dead code after the
+deletion". The same line goes to the owner with the plan.
+
+A child that fails CI twice on the same failure, or reports `BLOCKED` on the work itself, is not
+given a stronger model or more effort by the orchestrator: that changes what the wave costs.
+Tell the owner what it is stuck on and propose the next row up, or the next effort level.
+
+## 3. Spawn
 
 First assign each issue to the owner on GitHub (`issue_write`, method `update`, `assignees`), and
 note it in the roster. One already assigned to someone else is not reassigned or spawned: tell the
 owner who has it. An issue the wave drops unmerged is unassigned.
 
 Then `create_session` per issue: `source_url` the repo, `outcome_branch` `issue-<N>-<slug>`, title
-`opencode-courier #<N>: <scope>`, tags `opencode-courier`, `wave-<K>`, `issue:<N>`, `model` when the
-owner names one for the issue, and the prompt from `references/child-prompt.md` with every bracket
+`opencode-courier #<N>: <scope>`, tags `opencode-courier`, `wave-<K>`, `issue:<N>`, the `model` and
+the effort chosen for the issue, and the prompt from `references/child-prompt.md` with every bracket
 filled, including what the owner has already decided for that issue. Never `permission_mode: plan`:
 no one is there to approve the plan.
 
-## 3. Monitor without polling
+## 4. Monitor without polling
 
 - Children send their turn-end block to `@parent`, which wakes the orchestrator. End your turn to
   wait for it.
@@ -55,7 +89,7 @@ no one is there to approve the plan.
   an unfiltered page overflows the tool result.
 - A check-in where nothing changed says nothing to the owner.
 
-## 4. Decisions
+## 5. Decisions
 
 - `NEEDS USER DECISION` on something the code, README or CLAUDE.md settles: decide, cite it, send
   it back to the child.
@@ -65,7 +99,7 @@ no one is there to approve the plan.
 - `BLOCKED` on something outside the session (a denied host, a missing secret, GitHub access):
   tell the owner what to change, and where.
 
-## 5. Merge
+## 6. Merge
 
 **The go.** Merging needs the owner's go in a real message ("merge them when they're green"). It
 carries through later check-ins for the PRs it covers; record it in the roster. Without one, ask
@@ -92,12 +126,13 @@ once per batch in the reply that presents the PRs.
 3. Tell every child still in flight that `main` moved, and which shared files changed.
 4. Spawn whatever was waiting on the merged issue.
 
-## 6. Close-out
+## 7. Close-out
 
 - After each merge, tell the child it is merged and done; confirm the issue reads closed.
 - When the whole wave is merged: delete the pending safety-net check-in, check `main`'s CI on the
   last merge (a run still going gets one `send_later`, never a wait in the turn), and give the
-  owner a short summary. Archive the child sessions once the owner has seen it.
+  owner a short summary, with the model and effort each issue ran on and whether either was
+  raised. Archive the child sessions once the owner has seen it.
 
 ## Taking over a running wave
 

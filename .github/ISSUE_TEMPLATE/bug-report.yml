@@ -79,7 +79,7 @@ body:
     id: screenshot
     attributes:
       label: Screenshot or recording
-      description: For the terminal part (tree panel, asks inbox, memory view).
+      description: For the terminal part (tree panel, asks inbox).
       placeholder: Drag and drop here
     validations:
       required: false

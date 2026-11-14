@@ -136,7 +136,7 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
 `text.ts` strings that name it, the `context` hook, `test/plugin.test.ts`, the snapshots
 (`bun test --update-snapshots`), the e2e groups and real-model checkers, README.md's tables,
 `docs/reference.md`, and the `courier-orchestrate` skill text in `src/skill.ts`. Its storage keys
-(`tree/store.ts`, `memory/store.ts`, `test/store.test.ts`) get a migration, or a reason for none in
+(`tree/store.ts`, `test/store.test.ts`) get a migration, or a reason for none in
 [architecture.md's Storage table](../../../docs/maintainers/architecture.md#storage).
 
 ## 5. Implement

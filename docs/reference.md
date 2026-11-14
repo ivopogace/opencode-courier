@@ -71,7 +71,7 @@ directory.
 
 ```jsonc
 {
-  "plugins": [{ "package": "opencode-courier", "options": { "maxDepth": 2, "memory": false } }]
+  "plugins": [{ "package": "opencode-courier", "options": { "maxDepth": 2 } }]
 }
 ```
 
@@ -80,12 +80,15 @@ directory.
 | `maxDepth` | `5` | The deepest a spawned session may be. Your session is depth 0. |
 | `maxChildren` | `5` | Live children one session may have. |
 | `maxTotal` | `30` | Live spawned sessions in one tree; the top is not counted. |
-| `memory` | `true` | `false` turns [memory](#memory) off. |
 | `nativeChildren` | `false` | The default for a child started without `native`: `true` creates non-isolated children as OpenCode subagents ([native child sessions](#native-child-sessions)). |
 
 The limits are positive integers. A value that is not valid keeps the default, and the server log
 says so. A change applies once OpenCode loads the plugin again. The `webhook` option of releases up
-to 0.13.8 is ignored: the webhook receiver and `courier_subscribe` are gone.
+to 0.13.8 is ignored: the webhook receiver and `courier_subscribe` are gone. The `memory` option of
+releases up to 0.16.4 is not read, whatever its value, and each load logs one line for it:
+`courier: the memory option is not read: memory was removed in 0.17.0. Remove it from the config.`
+The tree records those releases stored stay in storage, unread, and a session they gave a `lessons`
+entry keeps it, though the tool it names is gone.
 
 The terminal part gets no options from `opencode.json`. It reads them from its own config,
 `~/.config/opencode/cli.json`:
@@ -121,8 +124,6 @@ for a git elsewhere.
 | `courier_answer` | `sessionID`, `requestID`, `reply?`, `message?`, `answers?` | Proposes `once` or `reject` for a [permission request](#a-child-that-asks-for-permission), or passes on your answers to a [question](#a-child-that-asks-a-question). |
 | `courier_later` | `message`, `sessionID?`, `delayMinutes?` or `at?` | Schedules a [message](#scheduled-messages) for a session (this one by default), in `delayMinutes` or at an ISO 8601 time. Returns its id. |
 | `courier_cancel` | `id` | Drops a scheduled message. |
-| `courier_recall` | `sessionID?` | Lists the project's [tree records](#memory), or gives one in full. |
-| `courier_note` | `text` | Writes the [lesson](#the-lesson) of the caller's tree. |
 
 ## The model a child runs on
 
@@ -181,7 +182,7 @@ when that start is later than its last turn's end is the transcript read, which 
 turn from one ended by a plain permission decline, which records no end. On an older OpenCode, or
 for a session that has not run since the upgrade, the transcript is read whenever anything changed
 the session after its last turn's end. The same reading serves `courier_tree`, the tree panel, the
-footer, the memory's record and the [missed-wake](#a-missed-wake) check.
+footer and the [missed-wake](#a-missed-wake) check.
 
 **The brief.** Each spawned session is told its depth, the limits and how to report. Below
 `maxDepth` it is told to split its task when it has two or more independent, substantial parts,
@@ -205,25 +206,16 @@ itself: it acts on it and says in its report what it did because of it.
 **The role.** Every spawned session carries one line in its system prompt, `opencode-courier role: …`,
 in the `role` entry of its session instructions (OpenCode 2.2.0's `<context key="role">` block),
 written as it is started; a root gets its own at its first spawn, which its transcript shows once as
-"Instructions updated: api/role, api/standing" (with `api/lessons` when the project has a lesson).
+"Instructions updated: api/role, api/standing".
 On an older OpenCode the plugin adds the line as a system part on each
 model request instead. A session below `maxDepth` is a `sub-orchestrator`. One at `maxDepth` is a
-`leaf`, and its requests go without `courier_spawn`, `courier_recall` and `courier_note`. A top
+`leaf`, and its requests go without `courier_spawn`. A top
 session that has started no session yet is pointed to the skill; once it has, it is the `root
 orchestrator`, told to load the skill if the skill is not in its context (after a compaction, say).
 The root may also hand a heavy task whole to one session, to keep its own context:
 `split: 1 part: <the task>, to keep my context`. The brief, the role line and the skill set each
 split-line form in backticks, so its own semicolon and comma read as part of the form; the plugin
 reads the line with or without them.
-
-**The lessons.** Beside its role, every spawned session below `maxDepth` gets the project's lessons
-in a `lessons` entry, written as it is started: the [lessons](#the-lesson) of the project's tree
-records as `courier_recall` lists them, pinned first and then newest first, at most 5, each with its
-tree's title, under one line saying that `courier_recall` has the records. A root gets its own at its
-first spawn, beside its role. When `courier_note` writes a lesson, the entry is written again on the
-top and its current children below `maxDepth`, where it changed.
-A leaf gets none, as it cannot split. Nothing is written with the memory option off, or while no
-record of the project holds a lesson.
 
 **The standing.** A parent carries what `courier_children` shows in a `standing` entry: one line per
 session it started, oldest first, with its state (`started`, `working`, `sent progress`, `reported
@@ -237,8 +229,8 @@ the parent's next step, and the parent needs no `courier_children` call to see w
 stand. It lists at most 10 children and counts older ones. A held report's body is not in it: the
 group's release delivers the reports as one message, and the entry carries state, not content.
 
-On an older OpenCode neither entry is written, nor where a put fails (logged); the lessons are
-still in `courier_recall` and the standing in `courier_children`.
+On an older OpenCode neither entry is written, nor where a put fails (logged); the standing is
+still in `courier_children`.
 
 ## The courier-orchestrate skill
 
@@ -283,8 +275,7 @@ order:
 5. **Integrate**: merge each isolated part's reported branch, check again, then `courier_cleanup`
    each session done with, isolated or not ([stopping](#seeing-and-stopping-a-subtree) says which
    stopped ones still count).
-6. **Done** only when every part is verified and integrated; at the root, one `courier_note` when
-   the next tree should know something, none otherwise.
+6. **Done** only when every part is verified and integrated.
 
 Without the skill, a child's brief still carries the split rule, what a group is for, no polling, the
 limits, verifying, how to report and to send a finding up, and that text typed into its session reaches the sessions above it
@@ -294,7 +285,7 @@ verifying. The tool descriptions carry what a group is for, no polling, check-in
 and `native`; the notices carry the relay and what to do about a child that fails or goes quiet.
 The skill alone adds the root's split rule after its first spawn, that several jobs are that many
 parts, writing a task, passing findings and prompt-route text on, answering a blocked,
-partial or failed report, merging, the definition of done and the root's lesson.
+partial or failed report, merging and the definition of done.
 
 Each check a part runs and each skill it loads may ask a permission, and every request below the
 top waits on you: a permission rule that allows the project's check scripts (run through them, not
@@ -677,7 +668,7 @@ started report to the original, and held reports and passed-on requests go there
 2.3.0 courier tells the fork so, through the `session.fork` hook, when the original was started by
 courier, has children in the roster, or holds a `role` or `standing` entry. It removes the fork's
 `role` and `standing` entries, which OpenCode announces to the model at the fork's next step as
-"no longer applies", and leaves the project's `lessons` entry. Then it adds one message, after
+"no longer applies", and leaves any other entry. Then it adds one message, after
 OpenCode's own `<fork-notice>`, that waits for the fork's first prompt and wakes nothing:
 
 ```text
@@ -761,96 +752,6 @@ Don't set a goal on a session that waits on courier children: their reports wake
 `courier_later` covers a check-in. A goal on a session that does the work itself is not affected.
 Once the reports are in, `/goal resume` picks a paused goal up again.
 
-## Memory
-
-The plugin keeps **one record per session tree** in the project, under its top session. It is
-rewritten at each turn end in the tree, from facts the plugin already has:
-
-- when the tree started and last moved, and the top session's title;
-- the top's `split:` line, and up to 3 later ones that read otherwise;
-- for each session started in it, [OpenCode's subagents](#opencodes-subagents) included: title,
-  depth, isolation, group, status, duration, cost, context use and spawns refused;
-- whether the tree is finished;
-- the lesson, the one thing a model writes.
-
-It never holds a report's body, artifacts or replies. A part's status is a report's status, or
-`failed` or `interrupted` for a turn that ended so, `stopped`, `stalled`, `out` (owes a report, or a
-subagent still runs), or `gone` (deleted before it settled). A subagent's is how its last turn
-ended: `done`, `failed` or `interrupted`.
-
-**`courier_recall { sessionID? }`** lists the project's records, pinned first, then newest first,
-one line each; its description asks the root for the one call and a spawned session for none:
-
-```
-- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused, 1 subagent · ran 42 min · last moved 5 days ago · $1.28 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
-```
-
-With `sessionID`, a listed top, it gives that record in full as JSON. Each call counts on the other
-trees' records, as how often each was listed and opened; the [memory view](#the-memory-view) shows
-the counts.
-
-### The record
-
-A record is one JSON object under the storage key `memory/<projectID>/<topSessionID>`, where
-`projectID` is shared by every worktree of a repository. Times are epoch milliseconds, durations
-milliseconds:
-
-```json
-{
-  "startedAt": 1760000000000,
-  "movedAt": 1760000900000,
-  "title": "Add memory to courier",
-  "split": "split: 3 parts: core, e2e, docs",
-  "finished": true,
-  "recalled": { "at": 1760000001000, "calls": 1 },
-  "lesson": { "text": "The docs part was ten lines; next time do it yourself.", "at": 1760000890000 },
-  "parts": [
-    { "sessionID": "ses_core", "title": "Core", "depth": 1, "isolated": true, "group": "wave", "status": "done", "duration": 540000, "cost": 0.42, "context": 0.31 },
-    { "sessionID": "ses_e2e", "title": "E2E scenario", "depth": 1, "isolated": true, "group": "wave", "status": "partial", "duration": 600000, "cost": 0.81, "refused": 1 }
-  ]
-}
-```
-
-| Field | Holds |
-|---|---|
-| `startedAt`, `movedAt` | When the top was created, and when a turn in the tree last ended. |
-| `title` | The top session's title. |
-| `split` | The top's first `split:` line as written, or `not stated`. |
-| `revisions` | Absent until the top states another split line: `[{ text, at, parts }]`, the newest 3. |
-| `finished` | Whether nothing in the tree ran or waited and every part had settled. |
-| `recalled` | `{ calls, at? }`: `courier_recall` calls from the tree; `at` when the top first called. |
-| `lesson` | `{ text, at, depth? }`, from the top's `courier_note`; `depth` only on a lesson an earlier version took from a sub-orchestrator, listed as `from depth N`. |
-| `reads`, `pinned` | Merged in when read, from keys beside the record (below); never written with it. |
-| `parts` | One per session started in the tree, in tree order: `sessionID`, `title`, `depth`, `isolated`, `subagent` (`true` for [OpenCode's subagents](#opencodes-subagents)), `group`, `status`, `duration`, `cost`, `context` (0 to 1) and `refused`. A count of parts, as in `revisions` and the listing's line, leaves the subagents out; the listing counts them apart. |
-
-Beside the record, each key with one writer: `…/<topSessionID>/pin` (`{ at }`, the memory view's
-pin) and `…/<topSessionID>/reads/<readerTopSessionID>` (`{ shown, read, at }`, from that reader
-tree's `courier_recall` calls, summed when read).
-
-To seed a record by hand for a test, set it with `e2e/kv.ts` against a running test server:
-`bun e2e/kv.ts set 'memory/<projectID>/<topSessionID>' '<json>' '<a key the plugin stored>'`.
-Missing fields take their defaults, a part without `sessionID` is dropped, and a value without
-`parts` is not a record. A `lesson` may be a bare string; one over 300 characters is clipped.
-
-### The lesson
-
-**`courier_note { text }`** writes the caller's tree's one lesson: one line, at most 300 characters,
-naming the job and the reason. A longer one is refused, not cut. A second note replaces the first,
-so write it last, once the work is verified. Only the top session writes it. A session below the top,
-a sub-orchestrator or a leaf, is refused, told to put what it learned in its report, which the top
-reads before it writes the lesson. A tree with no record yet (one that has neither ended a turn with
-children nor called `courier_recall`) is refused too. A lesson is not a rule: a rule
-belongs in AGENTS.md. It is read by every later session in the project, so it holds no code or
-secrets. Besides the listing, the project's lessons reach every session that can split in its system
-prompt, through the [`lessons` entry](#session-trees-and-their-limits).
-
-**Retention.** A record you pin in the [memory view](#the-memory-view) is never dropped. Of the
-rest, each project keeps 30, those with a lesson first, and none that has not moved in 90 days. The
-others are dropped when the plugin loads.
-
-**Off.** `"memory": false` writes no records. `courier_recall` says it is off, and `courier_note` is
-refused.
-
 ## Native child sessions
 
 A native child is created with OpenCode's own `parentID`, so OpenCode treats it as the parent's
@@ -923,14 +824,12 @@ subagents' own subagents too.
 - **[`courier_stop`](#seeing-and-stopping-a-subtree)** interrupts them with the rest of the subtree,
   since OpenCode ties none to its parent and they would outlive it. A subagent cannot be the target
   itself.
-- **The [record](#the-record)** lists them in `parts`, so its cost is the whole tree's.
 - **A follow-up into a native child.** A parent's `subagent` call with its native child's session id
   prompts that child as a plain `user` item, which courier passes up to the parent too, as
   `route="prompt"` ([steering](#steering-a-running-tree)). A plain subagent has no roster parent,
   so a follow-up into it is passed to nobody.
-- **No role.** Their requests carry no role line and go without `courier_spawn`, `courier_recall`
-  and `courier_note`, as a leaf's do: a subagent answers its parent's tool call and starts no tree of
-  its own. The plugin tells one by its OpenCode `parentID` and its missing roster entry. A subagent of a
+- **No role.** Their requests carry no role line and go without `courier_spawn`, as a leaf's do:
+  a subagent answers its parent's tool call and starts no tree of its own. The plugin tells one by its OpenCode `parentID` and its missing roster entry. A subagent of a
   session in no tree (one that neither started a session nor was started by one) is a top session
   like any other and is pointed to the skill, until that session starts one.
 
@@ -1038,33 +937,6 @@ nothing is left. Choosing an ask opens its dialog; `esc` goes back.
 New asks play OpenCode's own sounds. A native child's new ask, which OpenCode does not announce,
 also shows a notification naming its path in the tree. Asks already waiting when the TUI starts, or
 when it first reads a tree, are not announced.
-
-### The memory view
-
-`/courier memory` (or "Courier: memory" in the palette) lists the project's [tree records](#memory):
-pinned first, then grouped by the day each last moved, in local time.
-
-```
-Memory (3)
-  Pinned
-  Split the parser 2 parts: 2 done · 12 min · $0.70 · shown 7 times, opened once
-  lesson (2026-09-02): "The lexer and the parser collided in one file; give them to one session."
-
-  Today
-  Add memory to courier (this session) 3 parts: 2 done, 1 partial · 42 min · $1.28
-  lesson (2026-10-17): "The docs part was ten lines; next time do it yourself."
-                                                                            forget x  pin p
-```
-
-Each row: the top's title, the parts by status, how long it ran, its cost, `not finished` when it
-is not, and how often other trees' `courier_recall` listed and opened it. The lesson is under it.
-
-- `enter` shows the record in full: the tree, its parts and its lesson. `esc` goes back.
-- `p` pins or unpins, with no confirm. A pinned record is listed first and never swept.
-- `x` forgets the record, or on a lesson row in a record only the lesson, after a confirm.
-- `esc` closes.
-
-Every letter but `x` and `p` types into the search. With memory off, the view says so.
 
 ## Two servers on one data directory
 

@@ -5,7 +5,7 @@ Why the code is shaped as it is. [CLAUDE.md](../../CLAUDE.md)'s Layout is the sh
 
 ## Modules
 
-`src/` is split by feature: `tree/`, `person/`, `scheduling/` and `memory/`, each hexagonal inside
+`src/` is split by feature: `tree/`, `person/` and `scheduling/`, each hexagonal inside
 where it has domain rules (`scheduling/` has no `ports.ts` or `domain.ts`). `kernel/` holds what models see of the protocol; `platform/` the hub, events and
 storage helpers. Two composition roots sit on top: `index.ts` (the server plugin) and `tui.tsx`.
 The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules' RPC contracts.
@@ -16,17 +16,11 @@ The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules
   The hub's `subscribe` and its scheduler's `tick` are the last-loaded copy's, and leaving clears
   neither (see Version skew).
 - **The silent-turn rule is a query**, `Waits`, which `tree/` declares and `person/` and
-  `scheduling/` supply. `index.ts` composes it, so `tree/` does not depend on `person/`. The
-  `context` hook takes the tools to hide from a leaf (`hiddenFromLeaf`) the same way.
-- **The memory refreshes in the `after` phase**, once the turn-end notices are out and the report
-  state is written. It reads only through ports every hub-v2 member has (`storage`, `session`, `now`,
-  `log`). What it needs beyond them is process-wide, under the key `opencode-courier.memory`.
+  `scheduling/` supply. `index.ts` composes it, so `tree/` does not depend on `person/`.
 - **The TUI bundle carries no server wiring** (no `index.ts`, tool, store or hub): the `tui.tsx` and
   `rpc.ts` entrypoints skip the modules' `index.ts` (see the import rules), and a module's `tui.tsx`
   shares with the server only its `rpc.ts`, its `text.ts` and the pure code those import. The TUI
-  part goes through the same use cases as the tools, over the RPCs `courier`, `courier-person` and
-  `courier-memory`. The memory view is a dialog, not a panel: the records are the project's, and a
-  panel belongs to one session.
+  part goes through the same use cases as the tools, over the RPCs `courier` and `courier-person`.
 - **Text lives next to the module that speaks it**, with one snapshot over all of it.
 
 The import rules:
@@ -35,13 +29,13 @@ The import rules:
   entrypoints. `src/tui.tsx` imports only `@opencode/plugin/tui` itself (no subpath, no `solid-js`
   or `@opentui/*`) and modules' `tui.tsx` and `rpc.ts`; `src/rpc.ts` imports only modules'
   `rpc.ts`.
-- The only dependencies between modules are `person/`'s and `memory/`'s on `tree/`, through
+- The only dependency between modules is `person/`'s on `tree/`, through
   `tree/index.ts`. Each module may import `platform/**` and `kernel/**`; `platform/` imports
   nothing outside itself.
 - A module's `text.ts` imports only `kernel/**`, `platform/json.ts` and its own `ports.ts` and
   `domain.ts`.
-- `tree/store.ts` and `memory/store.ts` are the only files that know their storage keys; no file
-  outside the module imports them, and no other file names their key prefixes.
+- `tree/store.ts` is the only file that knows its storage keys; no file outside `tree/` imports it,
+  and no other file names its key prefixes.
 - A module's `tui.tsx` imports only `@opencode/plugin/tui`, `solid-js` (each with its subpaths),
   `@opentui/*`, its `rpc.ts`, `text.ts` and `mascot.ts`; a module's `rpc.ts` only
   `@opencode/plugin/rpc` and `effect`.
@@ -50,8 +44,7 @@ The import rules:
 
 The storage is OpenCode's KV, shared by every location, copy and server on one data directory. So a
 key or a stored value never changes shape. It has no compare-and-set, so what two writers could
-race on gets keys of its own, one writer each (a record's pin and reads). `test/store.test.ts` pins
-the tree's and the memory's keys.
+race on gets keys of its own, one writer each. `test/store.test.ts` pins the tree's keys.
 
 | Key | Holds |
 |---|---|
@@ -69,12 +62,10 @@ the tree's and the memory's keys.
 | `typed/<sessionID>/<inboxID>` | `{ at, text }`: a `user` item typed into a spawned session, from its enqueue until its fan-up is sent or skipped. |
 | `wake/<sessionID>/<inboxID>` | A courier message waiting in an inbox: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled`. |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers. |
-| `memory/<projectID>/<topSessionID>` | A tree's record. |
-| `memory/<projectID>/<topSessionID>/pin` | `{ at }`: the person's pin, written only by the memory view. |
-| `memory/<projectID>/<topSessionID>/reads/<readerTopSessionID>` | `{ shown, read, at }`, written only by the reader tree; summed when read. |
 
-Releases up to 0.13.8 also wrote `webhook/<topic>/<sessionID>`, a webhook subscription. Nothing
-reads those keys now, and none is written again.
+Releases up to 0.13.8 also wrote `webhook/<topic>/<sessionID>`, a webhook subscription, and releases
+up to 0.16.4 wrote `memory/<projectID>/<topSessionID>` with its `pin` and `reads/`, a tree's record.
+Nothing reads those keys now, and none is written again.
 
 A session owes a report while `prompt` is later than `settled`. Its parent waits on it while
 `prompt` is later than `told` too. The prompt's time is the event's `created`; the report's is the
@@ -89,8 +80,8 @@ never taken for an orphan. A held report outlives its member's roster entry.
 
 The host facts behind this are in [plugin-api-notes.md](plugin-api-notes.md#the-inbox-and-wakes).
 
-- **The wake store** (`wake/`) holds courier messages waiting in an inbox, which the limits and the
-  memory's `finished` count (`waitsInInbox`). `courier_send` writes that row itself once `synthetic`
+- **The wake store** (`wake/`) holds courier messages waiting in an inbox, which the limits count
+  (`waitsInInbox`). `courier_send` writes that row itself once `synthetic`
   returns (`noteSent`), since the enqueued event is handled apart from the call.
 - **Is it running** (`busy`, `src/tree/domain.ts`; `runs`, `src/tree/running.ts`) reads `time.busy`
   first: `busy` not later than `idle` is rest at `idle`, with no transcript read and none of the
@@ -111,7 +102,7 @@ The host facts behind this are in [plugin-api-notes.md](plugin-api-notes.md#the-
 
 ## Instruction entries
 
-The courier writes three [keyed session instructions](plugin-api-notes.md#keyed-session-instructions):
+The courier writes two [keyed session instructions](plugin-api-notes.md#keyed-session-instructions):
 
 - `role`: a spawned session's role part (`spawn.ts`, before the first prompt, so it is in the
   baseline and moves no cached prefix). It ends with the line about OpenCode's own message at a
@@ -120,14 +111,13 @@ The courier writes three [keyed session instructions](plugin-api-notes.md#keyed-
   spawn: that put comes after the parent's first prompt, so it leaves the baseline and the cached
   prefix alone and reaches the model as one instruction update, as a root's entry does at its first
   spawn.
-- `lessons`: the project's lessons, to a session above the deepest level when memory is on and has
-  lessons (`spawn.ts`; `memory/lessons.ts` supplies the text and `courier_note` renews it).
 - `standing`: a parent's children (`tree/standing.ts`, from the tools and events that move a child,
   removed with the last child).
 
-A fork copies all three; `tree/fork.ts` removes `role` and `standing` from it and leaves `lessons`.
+A fork copies a session's entries; `tree/fork.ts` removes `role` and `standing` from it and leaves
+any other, such as the `lessons` entry releases up to 0.16.4 wrote.
 
-Each value stays well under 3 KiB. `standing` and `lessons` are `list`ed and compared before a put
+Each value stays well under 3 KiB. `standing` is `list`ed and compared before a put
 that may be the same, so an unchanged value costs one read and no write. The `context` hook lists a
 session's entries once per instance and session.
 

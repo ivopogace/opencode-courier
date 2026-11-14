@@ -18,10 +18,10 @@ the hub), `development.md` (commands, suites, CI), `real-model.md` and `releasin
   Imports nothing outside itself.
 - The modules, each imported from outside only through its `index.ts`: `tree/` (the session tree:
   spawn, send, reports, groups, missed wakes, the `context` hook, the tree panel), `person/`
-  (permission requests, forms, the question relay), `scheduling/` (`courier_later`) and `memory/`.
-  `person/` and `memory/` may import `tree/`; nothing else crosses. Each has `ports.ts`, a pure
+  (permission requests, forms, the question relay) and `scheduling/` (`courier_later`).
+  `person/` may import `tree/`; nothing else crosses. Each has `ports.ts`, a pure
   `domain.ts`, `text.ts` (its model-facing strings, pure), `tools.ts`, and one file per use case.
-  `tree/store.ts` and `memory/store.ts` are the only files that know their storage keys.
+  `tree/store.ts` is the only file that knows its storage keys.
 - `test/`: unit tests against a fake plugin context. `imports.test.ts` enforces the import rules;
   `notices.test.ts` snapshots every `text.ts`, the skill and the tools' descriptions and schemas
   (`bun test --update-snapshots`); `links.test.ts` resolves every Markdown link.

@@ -1,7 +1,7 @@
 # Shrinking opencode-courier
 
 *   **Author:** Ivo Pogace
-*   **Status:** Implemented, released in 0.17.0; the summary's empty `groups` list went in 0.18.0
+*   **Status:** Implemented, released in 0.17.0
 *   **Date:** 2026-11-14
 
 --------------------------------------------------------------------------------
@@ -723,8 +723,8 @@ The author made each rejection below.
     names a hidden tool has to be checked per role. A fork of a deepest-level session becomes a
     top session and its tool list changes.
 *   **Reason for Rejection**: Not rejected on merit. It is new behaviour with its own test
-    matrix, and the removals here neither need it nor block it. It was the first follow-up,
-    implemented through [Tools by role](tools-by-role.md), which measures the saving.
+    matrix, and the removals here neither need it nor block it. It is implemented through
+    [Tools by role](tools-by-role.md), which measures the saving.
 
 ### Alternative U: Warn about removed options for one release, then remove them
 
@@ -855,7 +855,7 @@ missed.
 
 *   **Type / Scope**: Tree module.
 *   **Proposed Changes**: `spawn.ts` stops putting the `lessons` instruction entry. `ports.ts`
-    loses the `entries` and `hiddenFromLeaf` ports (Tools by role brings `hiddenFromLeaf` back, for `courier_answer`). In `context.ts` the statement that removes
+    loses the `entries` and `hiddenFromLeaf` ports (Tools by role keeps a `hiddenFromLeaf` port, for `courier_answer`). In `context.ts` the statement that removes
     tools from a session at the deepest level keeps removing `courier_spawn` and stops reading
     the extra names. Nothing removes a `lessons` entry an existing session carries.
 

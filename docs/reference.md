@@ -128,9 +128,10 @@ for a git elsewhere.
 | `courier_cancel` | `id` | Drops a scheduled message. |
 
 OpenCode drops a parameter a tool does not take before the tool runs, and raises no error. So the
-`group` of `courier_spawn` and the `finding` of `courier_send`, which releases up to 0.16.4 took,
-change nothing: the child is started in no group, its report is delivered alone, when it is sent,
-and the text of the `finding` is not delivered. A report those releases held for a join group stays
+`group` of `courier_spawn` and the `finding` and `queue` of `courier_send`, which releases up to
+0.16.4 took, change nothing: the child is started in no group, its report is delivered alone, when
+it is sent, the text of the `finding` is not delivered, and a message sent with `queue` is delivered
+as every message is, read by a running turn at its next step. A report those releases held for a join group stays
 in storage, undelivered; its text is in the child's own session.
 
 ## The model a child runs on

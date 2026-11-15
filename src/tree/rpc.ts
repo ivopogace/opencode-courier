@@ -8,7 +8,6 @@ const Summary = Schema.Struct({
   waiting: Count,
   idle: Count,
   stalled: Schema.optionalKey(Count),
-  groups: Schema.Array(Schema.Unknown),
 })
 
 export type Summary = typeof Summary.Type

@@ -214,10 +214,10 @@ echo "  $info"
 check "the server reports features server, tui and rpc" "$(jq -r '.features == {server: true, tui: true, rpc: true}' <<<"$info")"
 
 echo "the RPC answers over HTTP with the parent's summary, and refuses what it cannot take"
-waiting='{"running":0,"waiting":1,"idle":1,"groups":[]}'
+waiting='{"running":0,"waiting":1,"idle":1}'
 result=$(summary_until "$parent" 60 "$waiting")
 echo "  $result"
-check "one child waits on the person and one has reported, with the groups field a terminal of an earlier release reads left empty" "$([ "$result" = "$waiting" ] && echo true || echo false)"
+check "one child waits on the person and one has reported, and the summary has no groups field" "$([ "$result" = "$waiting" ] && echo true || echo false)"
 asking=$(for child in $children; do if [ "$(api "session/$child/permission" | jq -r '.data | length')" = 1 ]; then echo "$child"; fi; done | head -1)
 check "the child that asks is found" "$([ -n "$asking" ] && echo true || echo false)"
 bad=$(rpc summary '{"wrong":1}')
@@ -225,7 +225,7 @@ echo "  $bad"
 check "an input without a session is refused as rpc.invalid_input" "$(jq -r '.type == "rpc.invalid_input"' <<<"$bad")"
 check "an unknown method is rpc.method_not_found" "$(rpc nothing '{}' | jq -r '.type == "rpc.method_not_found"')"
 check "a session that started none has an empty summary" \
-  "$(rpc summary "{\"sessionID\":\"$asking\"}" | jq -r '.output == {running: 0, waiting: 0, idle: 0, groups: []}')"
+  "$(rpc summary "{\"sessionID\":\"$asking\"}" | jq -r '.output == {running: 0, waiting: 0, idle: 0}')"
 
 echo "the TUI shows the entry in the prompt's footer, and follows the answer"
 open_tui tui "$parent"
@@ -258,7 +258,7 @@ request=$(api "session/$asking/permission" | jq -r '.data[0].id // empty')
 code=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
   --data '{"decision":"once"}' "$SERVER/api/session/$asking/permission/$request/reply")
 check "the person answered the child's request ($request)" "$([ "$code" = 204 ] && echo true || echo false)"
-idle='{"running":0,"waiting":0,"idle":2,"groups":[]}'
+idle='{"running":0,"waiting":0,"idle":2}'
 result=$(summary_until "$parent" 60 "$idle")
 echo "  $result"
 check "the summary follows: both children idle" "$([ "$result" = "$idle" ] && echo true || echo false)"
@@ -373,19 +373,19 @@ check "the child carried on and reported" \
 check "the parent was told once that it is settled" "$([ "$(settled_notices)" = 1 ] && echo true || echo false)"
 
 echo "a tree that has started more sessions than maxTotal still shows the newest child and what it asks"
-one_idle='{"running":0,"waiting":0,"idle":1,"groups":[]}'
+one_idle='{"running":0,"waiting":0,"idle":1}'
 check "the first child has ended its turn" "$([ "$(summary_until "$asker_parent" 60 "$one_idle")" = "$one_idle" ] && echo true || echo false)"
 out=$(prompt_in "$asker_parent" "COURIER-TEST")
 second=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out" | head -1)
 check "the limit admits a second child once the first is done" "$([ -n "$second" ] && echo true || echo false)"
-two_idle='{"running":0,"waiting":0,"idle":2,"groups":[]}'
+two_idle='{"running":0,"waiting":0,"idle":2}'
 check "the second child reported and ended its turn" "$([ "$(summary_until "$asker_parent" 90 "$two_idle")" = "$two_idle" ] && echo true || echo false)"
 out=$(prompt_in "$asker_parent" "COURIER-ASK")
 third=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out" | head -1)
 check "and a third, which asks for a permission" "$([ -n "$third" ] && echo true || echo false)"
 for _ in $(seq 1 45); do [ "$(api "session/$third/permission" | jq -r '.data | length')" = 1 ] && break; sleep 1; done
 check "the third child waits on its request" "$([ "$(api "session/$third/permission" | jq -r '.data | length')" = 1 ] && echo true || echo false)"
-one_waits='{"running":0,"waiting":1,"idle":2,"groups":[]}'
+one_waits='{"running":0,"waiting":1,"idle":2}'
 result=$(summary_until "$asker_parent" 30 "$one_waits")
 echo "  $result"
 check "the summary counts all three: one waiting on the person, two idle" "$([ "$result" = "$one_waits" ] && echo true || echo false)"
@@ -461,7 +461,7 @@ searcher=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") 
 form=
 for _ in $(seq 1 45); do form=$(api "session/$searcher/form" | jq -r '.data[0].id // empty'); [ -n "$form" ] && break; sleep 1; done
 check "the child shows OpenCode's web search form" "$([ -n "$form" ] && echo true || echo false)"
-one_form='{"running":0,"waiting":1,"idle":0,"groups":[]}'
+one_form='{"running":0,"waiting":1,"idle":0}'
 result=$(summary_until "$searcher_parent" 15 "$one_form")
 echo "  $result"
 check "the summary counts the child waiting on the person" "$([ "$result" = "$one_form" ] && echo true || echo false)"

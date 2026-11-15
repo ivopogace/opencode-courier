@@ -756,23 +756,23 @@ The author made each rejection below.
 
 ## Future Improvements
 
-*   **Tools by role**, as Alternative T describes.
-*   **A child's title in the transcript.** The line a parent's transcript shows for a courier
-    message is built from the sender's session id, for example `Message from ses_…`. The plugin
-    sets that line itself and has the child's title at that point. The line does not reach the
-    model: this was checked on OpenCode 2.3.0 with the scripted model. Showing the title changes
-    that one line, in the server part. It bears on `native`: the author keeps native children
-    for the readable "Subagent finished" line OpenCode writes for them, which a standalone child
-    lacks today.
-*   **`native`, `courier_cancel` and the typed-text copy** are each open to a design of their
-    own, with the real-model check's numbers in hand.
+*   **Tools by role**, as Alternative T describes, has [a design of its own](tools-by-role.md)
+    and is implemented: a session at the deepest level is offered no tool that only acts on
+    children.
+*   **A child's title in the transcript** is implemented: the line a parent's transcript shows
+    for a courier message names the sender's title, so a standalone child's message reads as
+    plainly as the "Subagent finished" line OpenCode writes for a native child.
+*   **`native`, `courier_cancel` and the typed-text copy** each stay as they are. `courier_cancel`
+    and the typed-text copy stay for the reasons of Alternatives I and K; `native` stays as a
+    per-spawn choice, for OpenCode's subagent tab.
 
 --------------------------------------------------------------------------------
 
 ## Detailed Implementation Plan
 
-**This plan is not ready to implement from.** A review against the code found it wrong in two
-ways that block, and it has not been corrected:
+**This plan is the outline the steps started from, not an exact record of them.** A review
+against the code found it wrong in two ways, which each step's pull request settled against the
+code rather than here:
 
 *   **The file lists are not exact.** About fifteen files that must change are missing, among
     them `test/notices.test.ts` in steps 2 and 3, `src/tree/index.ts` and `src/tree/standing.ts`
@@ -786,8 +786,8 @@ removed-name test collects the strings it checks. In the live suite, replacing `
 with `courier_tree` changes the shape about 25 checks read, and several kept suite groups use a
 join group as their vehicle.
 
-Each step's exact file list and final strings are to be settled when that step is taken up,
-against the code as it then is. What follows is the outline to start from.
+Each step's exact file list and final strings are in its pull request, settled against the code
+as it then was. What follows is the outline.
 
 The file lists come from a search of every tracked file for each feature's names, not from
 reading every file. A listed file mentions the feature; the implementer confirms each needs the

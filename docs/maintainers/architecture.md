@@ -6,7 +6,7 @@ Why the code is shaped as it is. [CLAUDE.md](../../CLAUDE.md)'s Layout is the sh
 ## Modules
 
 `src/` is split by feature: `tree/`, `person/` and `scheduling/`, each hexagonal inside
-where it has domain rules (`scheduling/` has no `ports.ts` or `domain.ts`). `kernel/` holds what models see of the protocol; `platform/` the hub, events and
+where it has domain rules (`person/` has no `domain.ts`, `scheduling/` neither `ports.ts` nor `domain.ts`). `kernel/` holds what models see of the protocol; `platform/` the hub, events and
 storage helpers. Two composition roots sit on top: `index.ts` (the server plugin) and `tui.tsx`.
 The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules' RPC contracts.
 

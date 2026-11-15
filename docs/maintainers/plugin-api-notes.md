@@ -75,10 +75,9 @@ older host and branches on it. How the plugin itself answers a trap is in
   (after two continuations the turn fails as `output-limit`). The delivered message is stamped with
   the event's `created`. Only `session.inbox.enqueued` carries the item's type (`user`,
   `synthetic`, `compaction`, `move`), so the plugin remembers it until delivery. It also carries a
-  synthetic item's `payload.metadata`, which is how `notePrompt` tells a session's own check-in (`scheduled` with `from` the receiving session, and
-  `scheduledAt`, the time it was scheduled, to compare with its report) and a status-less message
-  (only `source` and `from`, checked against the child store) from other courier messages; the `synthetic` call's returned id may arrive after the `delivered` event, so it is not
-  used.
+  synthetic item's `payload.metadata`, which is how `notePrompt` tells a session's own check-in and a
+  status-less message from other courier messages; the `synthetic` call's returned id may arrive
+  after the `delivered` event, so it is not used.
 - A prompt's `metadata` is copied into the inbox item's user payload by `SessionPrompt.prepare`
   (`packages/core/src/session/prompt.ts`), and `session.inbox.enqueued` carries it. A `user` item
   says nothing else about its origin: a prompt through the API or `opencode run`, the slash
@@ -227,8 +226,7 @@ and would go idle. Its name and shape may still change: a pin bump re-checks bot
   permission check passed. A dismissal kills the tool with `QuestionTool.CancelledError`, ending the
   turn. Forms live in memory: a restart drops them, and the call stays `running` until the next
   turn marks it aborted.
-- A plugin sees `form.created` (`id`, `sessionID`, `title`, `metadata`, `fields` with `key`, `type`,
-  `title`, `description`, `options`), `form.replied` (`answer`) and `form.cancelled`. Forms come from
+- A plugin sees `form.created`, `form.replied` and `form.cancelled`. Forms come from
   the question tool (`kind: "question"`), web search and MCP elicitation (`kind: "mcp-elicitation"`,
   session id `global`). `GET /api/form` lists them; `DELETE /api/session/:id/form/:form` dismisses
   one. `session.form.list` on a session whose location is idle answers an empty list without booting
@@ -355,13 +353,9 @@ What a native child (`courier_spawn` with `native: true`) rests on:
   tool has a switch, and the plugin API cannot withdraw an inbox item. The plugin keeps such a message from counting
   as a prompt in a parent started with `courier_spawn` (`notePrompt`), and `courier_stop` waits for
   it from a stopped native child, as from a subagent.
-  The plugin tells the model what the message is in the parent's `role` entry: `HOST_REPORTS`
-  (`tree/text.ts`), a fixed second line `rolePart` adds for a session above the deepest level,
-  written by a put of the parent's entry at each `native: true` spawn (the same value after the
-  first, so nothing is announced again; the puts for one parent run one at a time, so two spawns of one step
-  cannot leave the older value). The message itself is not edited in the `context` hook: the
-  child's last text in it is the only copy when a child ends without reporting. Where the role
-  goes in a system part, `context.ts` adds the same line (`Role.hostReports`).
+  The plugin tells the model what the message is in the parent's `role` entry (`HOST_REPORTS`,
+  [architecture.md](architecture.md#instruction-entries)) rather than editing the message in the
+  `context` hook: the child's last text in it is the only copy when a child ends without reporting.
 - **A restart resumes a directly driven child** (`session/execution/restart.ts`), a native child
   included, and defers the resumed children's wakes until the parents' attempts are counted.
 
@@ -637,10 +631,8 @@ is not. What the plugin does about it: [architecture.md](architecture.md#two-ser
 - **RPC.** A plugin cannot add an HTTP route: `rpc.register` sits behind authenticated `/api/rpc`
   with a JSON envelope. `Rpc.define` (`@opencode/plugin/rpc`) takes `{ id, methods, events }`;
   `rpc.*` names are reserved. Registration and `client.rpc` take Standard Schema, so one definition
-  serves both halves. One service per location; the last registration of an id answers. Errors:
-  `rpc.invalid_input`, `rpc.method_not_found`, declared errors, `rpc.internal`, `rpc.unavailable`,
-  `rpc.invalid_output`. Over HTTP: `POST /api/rpc/:rpcID/:method?directory=…` with
-  `{ "input": … }`.
+  serves both halves. One service per location; the last registration of an id answers. Over HTTP:
+  `POST /api/rpc/:rpcID/:method?directory=…` with `{ "input": … }`.
 - **`rpc.call` does not wait for plugins** (`packages/server/src/handlers/rpc.ts`): until the
   location's plugins have loaded it answers `rpc.unavailable` (HTTP 400). So the footer's read asks
   again each `UNAVAILABLE_MS` while it gets that (`whenLoaded`, `tree/tui.tsx`), and a live script

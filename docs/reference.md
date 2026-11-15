@@ -204,7 +204,7 @@ It tells a model, in order:
    sequential or tightly coupled one itself, or hand a heavy one whole to one session. Several whole
    jobs in one prompt are that many parts.
 2. **Start the parts**: when they do not all fit the limits, the next starts as each report frees a
-   slot. No two parts edit the same files; `isolate: true` where they edit in parallel. Each task
+   slot; a blocked part keeps its slot. No two parts edit the same files; `isolate: true` where they edit in parallel. Each task
    says what to produce, the context, how to check it, what to report and the skills to load (an
    isolated part sees only committed project skills). A part that depends on another starts once
    that one has reported and its branch is merged.

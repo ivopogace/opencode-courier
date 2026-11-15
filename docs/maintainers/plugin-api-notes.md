@@ -33,8 +33,8 @@ older host and branches on it. How the plugin itself answers a trap is in
   it. So a renamed optional key stays declared under its old name while it is accepted.
 - A promise tool that reads `context.signal`, or spreads the context, opts into a cooperative stop
   (`executePromiseTool`, `packages/plugin/src/promise/adapter.ts`): on the person's stop the signal
-  aborts and whatever the tool returns is its result. The courier's tools read only `sessionID` and
-  `id`, so a stop interrupts them.
+  aborts and whatever the tool returns is its result. The courier's tools read only `sessionID`,
+  `id` and `messageID`, so a stop interrupts them.
 
 ## Events
 

@@ -77,7 +77,7 @@ directory.
 
 The limits are positive integers. A value that is not valid keeps the default, and the server log
 says so. A change applies once OpenCode loads the plugin again. The `webhook`, `memory` and
-`nativeChildren` options of older releases are ignored; remove them from the config. A child is
+`nativeChildren` options are not read; remove them from the config. A child is
 [native](#native-child-sessions) only when its spawn passes `native: true`.
 
 The terminal part gets no options from `opencode.json`. It reads them from its own config,
@@ -114,8 +114,8 @@ for a git elsewhere.
 | `courier_later` | `message`, `sessionID?`, `delayMinutes?` or `at?` | Schedules a [message](#scheduled-messages) for a session (this one by default), in `delayMinutes` or at an ISO 8601 time. Returns its id. |
 | `courier_cancel` | `id` | Drops a scheduled message. |
 
-A parameter a tool does not take, such as one an older release took, is dropped without an error
-and changes nothing.
+OpenCode drops a parameter a tool does not take, such as `group`, `finding` or `queue`, before the
+tool runs, and raises no error: it changes nothing.
 
 ## The model a child runs on
 
@@ -146,7 +146,8 @@ A session is live while:
 - its turn runs, unless it has already sent its parent a report that is not `blocked` in that turn,
   so a parent woken by a report can start the next part in the same turn;
 - it [owes its parent a report](#a-child-that-ends-without-a-report);
-- its last report is `blocked`, as it waits on its parent's answer;
+- its last report is `blocked`, as it waits on its parent's answer; this makes no session above it
+  live, since no report of its own will wake them;
 - a message sent to wake it waits in its inbox, unless it is [stalled](#a-missed-wake);
 - a session below it is live.
 
@@ -220,7 +221,8 @@ It tells a model, in order:
 6. **Done** only when every part is verified and integrated.
 
 Without the skill, a child's brief, the tool descriptions and courier's notices still carry the
-split rule, the limits, how to report and the relay; the skill adds writing a task, passing findings
+split rule, the limits, how to report and the relay. The root has no brief, and its role line loses
+the split rule at its first spawn, so the skill states it for the root. The skill also adds writing a task, passing findings
 on, answering a blocked, partial or failed report, merging and the definition of done.
 
 Each check a part runs and each skill it loads may ask a permission, and every request below the
@@ -381,13 +383,13 @@ Anyone can read any tree.
 1. Only a session above the target may stop it.
 2. The `courier_later` messages scheduled for them are cancelled.
 3. They are interrupted deepest first, [OpenCode's subagents](#opencodes-subagents) among them. Each
-   says `interrupted`, `idle` (it was not running), `gone` (OpenCode no longer has it) or `failed`
+   says `interrupted`, `idle` (it was not running), `gone` (OpenCode does not have it) or `failed`
    (it may still run). An `idle` one that owed its report still owes it and counts toward the
    limits until its parent drops it with `courier_cleanup`.
 4. With `cleanup: true`, their worktrees are removed by `courier_cleanup`'s rules, without `force`.
 
-The target's parent is told once, unless the parent is the caller; sessions under the target are
-not told. A stopped session stays in the tree and can be messaged again. A session started by the
+When the target was interrupted, or was idle and owed a report or had reported `blocked`, its parent
+is told once, unless the parent is the caller; sessions under the target are not told. A stopped session stays in the tree and can be messaged again. A session started by the
 subtree while the stop runs may escape it.
 
 ## Steering a running tree

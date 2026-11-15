@@ -31,8 +31,9 @@ The import rules, which `test/imports.test.ts` states in full:
   module's `rpc.ts` only `@opencode/plugin/rpc` and `effect`.
 - The only dependency between modules is `person/`'s on `tree/`. Each module may import
   `platform/**` and `kernel/**`; `platform/` imports nothing outside itself.
-- What must stay pure does: a `text.ts`, `kernel/`, `skill.ts` and `tree/domain.ts` import only
-  `kernel/**`, `platform/json.ts` and their own module's `ports.ts` and `domain.ts`.
+- What must stay pure does: `kernel/` and `tree/domain.ts` import only `kernel/**` and
+  `platform/json.ts`; `skill.ts` only `kernel/**`; a module's `text.ts` those and its own module's
+  `ports.ts` and `domain.ts`. `tree/mascot.ts` and `platform/bounded.ts` import nothing.
 - `tree/store.ts` is the only file that knows its storage keys; no file outside `tree/` imports it,
   and no other file names its key prefixes.
 - `effect` is imported only by `person/question/`, `index.ts`, the `tools.ts` and the `rpc.ts` files.

@@ -104,8 +104,8 @@ answering itself.
 ## Recursive orchestration
 
 `COURIER_SCENARIO=recursive`: one split at the root and one more below it. The checker
-(`e2e/real-model-recursive.mjs`) reads every session reached from the root: the splits happen in
-one turn each, nobody polls, no session goes past `maxDepth`, every session reports with a status,
+(`e2e/real-model-recursive.mjs`) reads every session reached from the root: the root spawns two or more
+children in its first turn and a child two or more of its own in one turn, nobody polls, no session goes past `maxDepth`, every session reports with a status,
 each sub-orchestrator reports once after its children, and the files and the reply hold the values.
 A sub-orchestrator that starts exactly one child with no tool call of its own before it fails (a
 heuristic for a verifier that starts one implementor). Its notes say who loaded the skill and when,
@@ -178,7 +178,7 @@ waiting parts once the root has passed the key on, or once it no longer can.
 
 The `finding:` note, and `finding` in `summary.json`, give what a batch counts: whether the key
 reached the root, how many parts had it before they reported, and how many turns the root took. A
-root that runs "init" first and starts the others after its report fails only the first check, and
+root that runs "init" first and starts the others after its report fails only the check that the root spawned the three parts in its first turn, and
 the notes call it staged. The key is not wholly out of reach: the work directory above the project
 holds the server's log with the "init" shell output, so the notes name a part that went looking
 there, whose file then does not show the relay.

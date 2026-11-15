@@ -23,6 +23,5 @@ export async function summary(ports: CourierPorts, sessionID: string): Promise<S
     waiting: count("waiting"),
     idle: count("idle"),
     ...(stalls ? { stalled: stalls } : {}),
-    groups: [],
   }
 }

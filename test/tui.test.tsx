@@ -15,7 +15,7 @@ const FLASH = RGBA.fromInts(0, 200, 0)
 
 const HOVER = RGBA.fromInts(40, 40, 40)
 
-const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
+const empty: Summary = { running: 0, waiting: 0, idle: 0 }
 
 type Listener = (event: { type: string; data?: unknown; details: { type: string; data?: unknown } }) => void
 
@@ -192,8 +192,8 @@ async function renderFooter(claim: SlotClaim | undefined, sessionID: () => strin
 const settle = () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50))
 
 describe("summaryLine", () => {
-  test("names what the sessions do, leaving out what is zero and the groups a server part of an earlier release still sends", () => {
-    expect(summaryLine({ running: 2, waiting: 1, idle: 0, groups: [{ name: "pair", reported: 1, members: 2 }] })).toBe("courier 1 waiting on you · 2 running")
+  test("names what the sessions do, leaving out what is zero", () => {
+    expect(summaryLine({ running: 2, waiting: 1, idle: 0 })).toBe("courier 1 waiting on you · 2 running")
     expect(summaryLine({ ...empty, idle: 3 })).toBe("courier 3 idle")
   })
 
@@ -225,7 +225,7 @@ describe("summaryLine", () => {
 
 describe("the footer status entry", () => {
   test("shows the summary the server's RPC gives for the open session, asked at the TUI's location", async () => {
-    const fake = fakeContext(async () => ({ running: 2, waiting: 1, idle: 0, groups: [] }))
+    const fake = fakeContext(async () => ({ running: 2, waiting: 1, idle: 0 }))
     await tui.setup(fake.context)
     const app = await renderFooter(fake.claim("prompt.footer.status"), () => "ses_parent")
 

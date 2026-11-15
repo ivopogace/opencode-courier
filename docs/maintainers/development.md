@@ -37,8 +37,8 @@ and openssl. New behaviour gets a scenario there.
 - Scenarios live in groups, each a `run_<name>` function that starts its own sessions and relies on
   no other group's state. A new scenario goes into its group, or a new one.
 - `E2E_SHARD=k/n` deals the groups to shards by the seconds each took in CI (the weights in
-  `SUITE`, which the run log prints as `group <name>: N s`; update them when a group changes much). `restart-question` and `roster` restart the server
-  and share a shard. `epilogue`, the server log check, runs last in every shard. `E2E_PLAN=1` prints
+  `SUITE`, which the run log prints as `group <name>: N s`; update them when a group changes much). `restart-question` and `roster` always share a
+  shard (`BOUND`). `epilogue`, the server log check, runs last in every shard. `E2E_PLAN=1` prints
   what a run would do.
 - The mock model holds a child's reply back 5 s (`CHILD_DELAY_MS`), so the parent is idle when it
   lands. A scenario that does not need that sets `child_delay 1000` after its heading.
@@ -116,8 +116,8 @@ bug, vulnerability or unreviewed hotspot, or under 80% coverage on new code.
 `latest.yml` runs the live suites on the newest OpenCode release, nightly and on `main`, allowed to
 fail. It opens an issue when that release is newer than the pin ([the pin](releasing.md#the-plugin-api-pin)).
 
-`claude.yml` runs a review by Claude Code when an outside contributor opens a pull request, marks it
-ready or pushes to it, and when a maintainer comments `@claude review` on one. It reads the diff and CI's
+`claude.yml` runs a review by Claude Code when an outside contributor opens, reopens or marks
+ready a pull request or pushes to it, and when a maintainer comments `@claude` on one. It reads the diff and CI's
 results and runs none of the pull request's code. The outside review runs on `pull_request_target`,
-with the secrets, so it checks out the base branch and its tools are only `gh pr`. It needs the repository secret `CLAUDE_CODE_OAUTH_TOKEN`, from
+with the secrets, so it checks out the base branch and its tools are only `gh pr` and inline review comments. It needs the repository secret `CLAUDE_CODE_OAUTH_TOKEN`, from
 `claude setup-token`, and counts against that subscription's usage limits.

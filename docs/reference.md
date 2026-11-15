@@ -193,7 +193,8 @@ for a session that has not run since the upgrade, the transcript is read wheneve
 the session after its last turn's end. The same reading serves `courier_tree`, the tree panel, the
 footer and the [missed-wake](#a-missed-wake) check.
 
-**The brief.** Each spawned session is told its depth, the limits and how to report. Below
+**The brief.** Each spawned session is told its depth, how to report and, below `maxDepth`, the
+limits. Below
 `maxDepth` it is told to split its task when it has two or more independent, substantial parts,
 one session per part, and to do it itself otherwise. It never starts exactly one session for the
 whole task; one session for one stage is a part: a staged core when 2 or more parts follow it, a
@@ -238,8 +239,9 @@ split-line form in backticks, so its own semicolon and comma read as part of the
 reads the line with or without them.
 
 **The standing.** A parent carries the state of its children in a `standing` entry: one line per
-session it started, oldest first, with its state (`started`, `working`, `sent progress`, `reported
-done`, `ended its turn without a report`, `its turn failed`, `its turn was interrupted`, `stopped`).
+session it started, oldest first, with its state (`started`, `working`, `ended its turn without a
+report`, each of the last two with `, sent progress` when it sent some, `reported <status>`, `its
+turn failed`, `its turn was interrupted`, `stopped`).
 The plugin writes it
 when a child is started, reports or sends progress, fails,
 ends its turn silently, is interrupted, deleted, stopped or forgotten, only when its text changed,
@@ -274,7 +276,7 @@ order:
    be compacted away. Several whole jobs in one prompt are that many parts; below the root, never one
    session for the whole task.
 2. **Start the parts**: when they do not all fit the limits, the next is started as each report
-   frees a slot. Each report wakes the parent. No
+   frees a slot; a blocked part keeps its slot. Each report wakes the parent. No
    two parts edit the same files, `isolate: true` where they edit in parallel. Each task says what
    to produce, the context, how to check it, what to report and the skills to load from those the
    parent sees listed (an isolated part sees only committed project skills). A part that depends on
@@ -475,7 +477,7 @@ child carries on without an answer.
 
 A question whose call is cut off (the child's turn stopped, a restart) stays answerable. The top
 session gets a message marked `stopped="true"` or `restarted="true"`, and your answer reaches the
-child as a message. Stored questions are kept 14 days.
+child as a message. Stored questions are kept until answered, at most 14 days, the 100 newest.
 
 A child whose agent may not use the question tool (OpenCode's `general` agent, or a deny rule) can
 still ask with `courier_send`.
@@ -484,12 +486,12 @@ still ask with `courier_send`.
 
 **`courier_tree`** lists the sessions under a session, depth first, at most `maxTotal`: the live
 ones first, then the newest. Past that it says how many it left out (`truncated`). Each entry has
-its title, its last turn's outcome, how long it has been idle, when it was archived, its last reply
+its title, its last turn's outcome, when it last changed (`updated`) and went idle (`idle`), when it was archived, its last reply
 (`lastText`), the requests and questions it waits on (`pending`), its directory, whether it is
 isolated, `native: true` when it is a [subagent](#native-child-sessions), when it started,
 and its [model](#the-model-a-child-runs-on) when that is not the parent's,
 plus `parentID`, `depth` and `report`: `{ owes, progressed, ended }`,
-each `true` or `false`, and the `status` of its last report when there is one.
+each `true` or `false` (`ended`: its turn failed or was interrupted without a report), and the `status` of its last report when there is one.
 [OpenCode's subagents](#opencodes-subagents) in the tree are listed too, marked `subagent: true`,
 without `report`. Anyone can read any tree.
 
@@ -714,8 +716,9 @@ below). Use native children only with OpenCode's TUI or the paired app, which sh
 
 - **Asks are answered in OpenCode's view.** A native child's permission requests, questions and
   forms show in the TUI's view, and the paired app's request dock, of its nearest ancestor that is
-  not itself a native child. When that is the top session, the top session's model is only told (a
-  notice marked `shown="native"`) and told again once it is settled. Under a standalone child (an
+  not itself a native child. When that is the top session, the top session's model is only told (for a
+  request or a question a notice marked `shown="native"`, for a form the form notice, which names
+  the session that shows it) and told again once it is settled. Under a standalone child (an
   isolated one, or one spawned without `native: true`) they are relayed as a standalone child's are.
   With a bare API client nothing shows the prompts: `courier_answer` is the fallback, and
   `courier_tree` lists them under `pending`.
@@ -853,7 +856,7 @@ the open session.
 forgets it as `courier_cleanup` would, never with `force`, after a confirm. The server refuses a
 session OpenCode still has, or cannot look up, so `x` on a live row forgets nothing.
 
-**Sounds.** A child's report plays OpenCode's `subagent_done` sound.
+**Sounds.** A standalone child's report plays OpenCode's `subagent_done` sound.
 
 ### The asks inbox
 

@@ -19,8 +19,9 @@ the hub), `development.md` (commands, suites, CI), `real-model.md` and `releasin
 - The modules, each imported from outside only through its `index.ts`: `tree/` (the session tree:
   spawn, send, reports, missed wakes, the `context` hook, the tree panel), `person/`
   (permission requests, forms, the question relay) and `scheduling/` (`courier_later`).
-  `person/` may import `tree/`; nothing else crosses. Each has `ports.ts`, a pure
-  `domain.ts`, `text.ts` (its model-facing strings, pure), `tools.ts`, and one file per use case.
+  `person/` may import `tree/`; nothing else crosses. Each has `text.ts` (its model-facing
+  strings, pure), `tools.ts`, and one file per use case; `tree/` also has `ports.ts` and a pure
+  `domain.ts`, `person/` has `ports.ts`.
   `tree/store.ts` is the only file that knows its storage keys.
 - `test/`: unit tests against a fake plugin context. `imports.test.ts` enforces the import rules;
   `notices.test.ts` snapshots every `text.ts`, the skill and the tools' descriptions and schemas
@@ -29,7 +30,7 @@ the hub), `development.md` (commands, suites, CI), `real-model.md` and `releasin
   in groups named in its `SUITE`. `tui.sh`: the TUI in tmux. `real-model.sh`: a smoke test with a
   real model, not in CI.
 - `.github/workflows/ci.yml` runs the unit, live (four shards), TUI and SonarCloud jobs on every pull
-  request; `latest.yml` runs the live suite on OpenCode's latest release and opens an issue for a
+  request (the live and TUI jobs skip a docs-only one, SonarCloud a fork's); `latest.yml` runs the live suite on OpenCode's latest release and opens an issue for a
   newer one.
 
 ## Commands
@@ -38,7 +39,7 @@ the hub), `development.md` (commands, suites, CI), `real-model.md` and `releasin
 bun install
 bun run typecheck
 bun test
-bun run build      # dist/: tsc for the server half and rpc, script/build-tui.ts for tui
+bun run build      # dist/: tsc for the server half and rpc, tsc (declarations) and script/build-tui.ts for tui
 bun script/compat-table.ts --check   # the version tables against the release tags (git fetch --tags)
 # live test: install the CLI once, at the version of the pinned plugin API
 npm install --prefix <scratch>/oc @opencode/cli@2.3.0

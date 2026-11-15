@@ -20,8 +20,9 @@ open an issue first so we can agree on the shape before you write it.
 ## A pull request
 
 - Put `Closes #N` in the body and fill in the template.
-- The unit job's checks pass locally: `bun run typecheck`, `bun test`, `bun run build`, and
-  `bun script/compat-table.ts --check` after `git fetch --tags`.
+- The unit job's checks pass locally: `bun run typecheck`, `bun test`, `bun run build`,
+  `bun script/compat-table.ts --check` after `git fetch --tags`, `npx publint` and
+  `npx @arethetypeswrong/cli --pack --profile esm-only`.
 - A behaviour change comes with unit tests and a live scenario: in `e2e/run.sh`, which runs against
   a real OpenCode server with a scripted model and needs no API key, or in `e2e/tui.sh` for the
   terminal part. It also updates README.md and `docs/reference.md`.
@@ -29,7 +30,8 @@ open an issue first so we can agree on the shape before you write it.
   tool description) shows up in `test/__snapshots__/`; update it with `bun test --update-snapshots`
   and check the diff. Say so in the PR: such a change also needs a run against a real model
   (`e2e/real-model.sh`), which a maintainer does if you have no API key.
-- The plugin API is pinned to an exact OpenCode version, and no experimental OpenCode API is used.
+- The plugin API is pinned to an exact OpenCode version. An experimental OpenCode hook is used only
+  where a failed registration is logged and the plugin carries on without it.
 - Keep the change to what the issue needs. No comments in code, of any kind: a fact
   about OpenCode or the host goes in `docs/maintainers/plugin-api-notes.md`.
 - Describe what was wrong, what you changed and why it works, in your own words. A large, clearly

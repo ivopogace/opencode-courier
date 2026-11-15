@@ -9,13 +9,13 @@
 ## Overview
 
 opencode-courier offers eight tools: `courier_spawn`, `courier_send`, `courier_tree`,
-`courier_stop`, `courier_cleanup`, `courier_answer`, `courier_later` and `courier_cancel`. Every
-session is offered all eight, with one exception: a session that cannot start sessions is not
-offered `courier_spawn`.
+`courier_stop`, `courier_cleanup`, `courier_answer`, `courier_later` and `courier_cancel`. Without
+this design, every session is offered all eight, with one exception: a session that cannot start
+sessions is not offered `courier_spawn`. "Today" below means that state, without this design.
 
 This design extends that one exception. A session that cannot start sessions is also not offered
 `courier_stop`, `courier_cleanup` and `courier_answer`, because every call it could make to them
-is refused. Its requests carry four courier tools where they carry seven today, 4,099 characters
+is refused. Its requests carry four courier tools instead of seven, 4,099 characters
 fewer per request. Every other session keeps all eight. No model-facing string changes.
 
 It is Alternative T of [Shrinking opencode-courier](shrinking-opencode-courier.md), whose terms
@@ -442,8 +442,7 @@ transcript can hold calls to a tool its list does not have. That is so today for
 ## Non-Functional Requirements
 
 *   **Rollout and rollback.** Not a breaking change: no tool, parameter or option is removed, and
-    no call that succeeds today fails, outside the accepted case of a lowered `maxDepth`. It
-    ships in an ordinary release, with one line in its notes, when the author decides. While an
+    no call that succeeds without it fails, outside the accepted case of a lowered `maxDepth`. While an
     old and a new copy of the plugin are loaded side by side, a session's requests can carry
     seven tools from one copy and four from the other, each change costing one uncached request.
     A rollback restores the seven.

@@ -101,8 +101,10 @@ child reported `courier-permission-42`; the reply holds it. The parent is starte
 since `opencode run` answers its own session's prompts.
 
 `COURIER_PERSON=other-server` has the person reject the parent's prompt and answer through a second
-server, whose `courier_answer` holds no request; then allow the request in the child's session. With
-a native child the script answers the child's request directly, as OpenCode's view of the parent
+server, whose `courier_answer` holds no request; then allow the request in the child's session.
+The fifth check becomes: the parent's `courier_answer` on the other server passed nothing on and
+named another server.
+With a native child the script answers the child's request directly, as OpenCode's view of the parent
 would, and makes six checks: the parent was told with the `shown="native"` notice; it neither
 answered nor asked again; the request was settled (the parent was told so, or passed `once` on with
 `courier_answer` after the person told it to); the child reported; the reply holds it. A child is
@@ -446,8 +448,8 @@ bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory
 A label before `=` names the condition; several directories may share one. A path that is no run is
 skipped with a line on stderr. Each row has the verdict, the score, skill loads per depth, polled
 sessions, requests, the cache read tokens per request (the provider's prompt
-cache hits over the whole tree, `-` for a summary written before they were kept), the uncached input
-tokens per request (what the provider read anew), the duration and
+cache hits over the whole tree), the uncached input tokens per request (what the provider read
+anew), both `-` for a summary written before they were kept, the duration and
 the `split:` lines. A line under each table gives the means over its finished runs. The cache
 column is what a change to the role part is judged by: compare it before and after, on one model.
 

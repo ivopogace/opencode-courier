@@ -33,8 +33,8 @@ older host and branches on it. How the plugin itself answers a trap is in
   it. So a renamed optional key stays declared under its old name while it is accepted.
 - A promise tool that reads `context.signal`, or spreads the context, opts into a cooperative stop
   (`executePromiseTool`, `packages/plugin/src/promise/adapter.ts`): on the person's stop the signal
-  aborts and whatever the tool returns is its result. The courier's tools read only `sessionID` and
-  `id`, so a stop interrupts them.
+  aborts and whatever the tool returns is its result. The courier's tools read only `sessionID`,
+  `id` and `messageID`, so a stop interrupts them.
 
 ## Events
 
@@ -279,7 +279,7 @@ and would go idle. Its name and shape may still change: a pin bump re-checks bot
 ## Managed policy
 
 - The loader refuses a plugin the organisation's managed policy denies: `plugin.use` on the plugin's
-  target (since 2.2.3; `packages/core/src/plugin/module.ts`), before `integration.use` on
+  target (`packages/core/src/plugin/module.ts`), before `integration.use` on
   `plugin:<name>`. The policy schema (`packages/schema/src/config/policy.ts`) decodes a legacy
   `integration.use` whose resource starts `plugin:`, `skill:` or `mcp:` into the new action, so old
   policies still apply.

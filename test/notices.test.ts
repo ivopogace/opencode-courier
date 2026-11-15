@@ -128,7 +128,7 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Below the root, never start one session for the whole task")
     expect(skill.SKILL_CONTENT).toContain("At the root, the top session of the tree, which has no brief: split a task with 2 or more independent, substantial parts touching separate files or areas")
     expect(skill.SKILL_CONTENT).toContain("Several whole jobs in one prompt, such as 4 tickets, are that many parts")
-    expect(skill.SKILL_CONTENT).toContain("When they do not all fit the tree's limits at once, start the next as each report frees a slot.")
+    expect(skill.SKILL_CONTENT).toContain("When they do not all fit the tree's limits at once, start the next as each report frees a slot; a blocked part keeps its slot.")
     expect(skill.SKILL_CONTENT).toContain("A part that depends on another starts once that one has reported and its branch, if isolated, is merged into your checkout")
     expect(skill.SKILL_CONTENT).toContain("(an isolated part sees only committed project skills)")
     expect(skill.SKILL_CONTENT).not.toContain("it sees the same list")

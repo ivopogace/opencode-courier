@@ -715,15 +715,16 @@ The author made each rejection below.
 ### Alternative T: Offer each session only the tools it can use
 
 *   **Pros**: A session at the deepest level has no children, so of the eight tools only
-    `courier_send`, `courier_later` and `courier_cancel` are of use to it, and `courier_answer`
-    works only from the top. Hiding the rest would take four more descriptions out of every
+    `courier_send`, `courier_tree`, `courier_later` and `courier_cancel` are of use to it, and
+    `courier_answer` works only from the top. Hiding the rest would take three more descriptions out of every
     request such a session makes, beyond `courier_spawn`, which the plugin already hides from
     it through the same hook.
 *   **Cons**: It is an addition: a rule per role, test cases per role, and every string that
     names a hidden tool has to be checked per role. A fork of a deepest-level session becomes a
-    top session and its tool list changes. The saving is not measured.
+    top session and its tool list changes.
 *   **Reason for Rejection**: Not rejected on merit. It is new behaviour with its own test
-    matrix, and the removals here neither need it nor block it. It is the first follow-up.
+    matrix, and the removals here neither need it nor block it. It is implemented through
+    [Tools by role](tools-by-role.md), which measures the saving.
 
 ### Alternative U: Warn about removed options for one release, then remove them
 
@@ -854,7 +855,7 @@ missed.
 
 *   **Type / Scope**: Tree module.
 *   **Proposed Changes**: `spawn.ts` stops putting the `lessons` instruction entry. `ports.ts`
-    loses the `entries` and `hiddenFromLeaf` ports. In `context.ts` the statement that removes
+    loses the `entries` and `hiddenFromLeaf` ports (Tools by role keeps a `hiddenFromLeaf` port, for `courier_answer`). In `context.ts` the statement that removes
     tools from a session at the deepest level keeps removing `courier_spawn` and stops reading
     the extra names. Nothing removes a `lessons` entry an existing session carries.
 

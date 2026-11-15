@@ -39,7 +39,7 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_SKILL` | | `deny` denies `courier-orchestrate` in `permissions`, so no session can load it. |
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
-| `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, then for the children. |
+| `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, then for the children. A slow model needs `600`. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
 
 Each run prints a timeline of every session's turns and tool calls, its checks and notes. It keeps
@@ -47,6 +47,10 @@ Each run prints a timeline of every session's turns and tool calls, its checks a
 directory. The exit code is 0 when every check passes, 1 when one fails, and 2 when checks fail and
 model requests failed too (usually a 429): run it again. Use a plainly named work directory: a model
 that copies a long, odd path into a task gets it wrong.
+
+The prompts are in `e2e/real-model.sh`, the checks in the `e2e/real-model*.mjs` checkers; the run
+prints each check by name. A checker given `--saved` re-reads a run's saved transcripts instead of
+asking the server.
 
 ### Reading a stall
 
@@ -60,250 +64,98 @@ stops moving:
 - `probe.log` has one JSON line per event (`at`, `type`, `sessionID`). No events for the session
   after the tool's end means the server did nothing.
 
-### No sleeps
+### What counts as polling
 
-The fan-out and recursive prompts give each command as it is, with no `sleep` standing in for work.
-`recursive-finding`'s and `discovery`'s parts wait on files the checker creates (below).
-A report that reaches a parent while its turn still runs is
-steered into that turn, and the checkers count it as delivered: the first turn may hold reports, and
-one look after each report, in a turn of its own or steered in, is not polling.
-A `courier_tree` call before the session's first `courier_spawn` is not polling: there is
-nothing to poll yet. One after the first spawn and before any report is, and a `sleep` keeps its own rule.
+The prompts give each command as it is, with no `sleep` standing in for work. A report that reaches
+a parent while its turn still runs is steered into that turn and counts as delivered: one look after
+each report, in a turn of its own or steered in, is not polling. A `courier_tree` call before the
+session's first `courier_spawn` is not polling either; one after the first spawn and before any
+report is.
 
 ## The fan-out
 
-The default. The parent is asked:
-
-> Have two helper sessions work in parallel and report back to you. One runs the shell command
-> `` `echo $((17 * 23))` ``, the other runs `` `echo $((2 ** 10))` ``, and each reports the number it
-> printed. Start them with courier_spawn and do not run the commands yourself. When both have reported back, reply with one line: RESULTS \<first\> \<second\>
-
-Eight checks: two children spawned; the first turn ended after spawning; no polling (a
-`courier_tree` or `sleep` right after spawning, or more than one after a report); both children reported to the parent; both reports reached it, waking it or steered into
-its running turn, and got a reply; each carries a status and its answer; the reply holds both. The
-README's Quickstart prompt is a shorter wording with sleeps, which keep the children busy past the
-parent's first turn so that each report visibly wakes it: set `COURIER_PROMPT` to it.
+The default: two children each run one command and report; the parent ends its turn after
+spawning and replies once both reports are in. The README's Quickstart prompt is a shorter wording
+with sleeps, which keep the children busy past the parent's first turn so that each report visibly
+wakes it: set `COURIER_PROMPT` to it.
 
 ## The permission relay
 
-`COURIER_SCENARIO=permission`. `shell` asks for any command containing `courier-permission`, and
-the parent is asked:
+`COURIER_SCENARIO=permission`. The child's command needs a permission; the script plays the person
+and allows OpenCode's prompt in the parent's session. It checks that the parent is told, passes
+nothing on before the person answers, and passes `once` on after. The parent is started over the
+HTTP API, since `opencode run` answers its own session's prompts.
 
-> Have a helper session run the shell command `` `echo courier-permission-$((6 * 7))` `` and report
-> back what it printed. Start it with courier_spawn and do not run the command yourself. When it has
-> reported back, reply with one line: RESULT \<what it printed\>
+`COURIER_PERSON=other-server` has the person answer through a second server, whose `courier_answer`
+holds no request, so the check becomes that it named the other server. With a native child (the
+parent passed `native: true` on its own) the script answers in the child's session, as OpenCode's
+view of the parent would, and checks the `shown="native"` notice instead.
 
-The script plays the person and allows OpenCode's prompt in the parent's session. A parent that
-asks first gets "once" as the answer. Seven checks: the parent was told of the request; nothing
-passed on before the person answered; the parent proposed `once` without asking first; OpenCode
-asked the person in the parent's session; `once` was passed on after the person allowed it; the
-child reported `courier-permission-42`; the reply holds it. The parent is started over the HTTP API,
-since `opencode run` answers its own session's prompts.
-
-`COURIER_PERSON=other-server` has the person reject the parent's prompt and answer through a second
-server, whose `courier_answer` holds no request; then allow the request in the child's session.
-The fifth check becomes: the parent's `courier_answer` on the other server passed nothing on and
-named another server.
-With a native child the script answers the child's request directly, as OpenCode's view of the parent
-would, and makes six checks: the parent was told with the `shown="native"` notice; it neither
-answered nor asked again; the request was settled (the parent was told so, or passed `once` on with
-`courier_answer` after the person told it to); the child reported; the reply holds it. A child is
-native when the parent spawns it with `native: true` on its own, which the checker reads from the
-spawn or the notice.
-
-`--saved` re-reads a run. What only the live run saw, OpenCode's prompt or form in the parent's
-session, is kept in `summary.json` under `observed`. A `summary.json` without it has it read from the
-transcript, a `courier_answer` proposing `once` in the parent's turn after the notice standing for
-the held prompt.
+What only the live run saw, OpenCode's prompt or form in the parent's session, is kept in
+`summary.json` under `observed` for `--saved`.
 
 ## The question relay
 
-`COURIER_SCENARIO=question`. The parent is asked:
-
-> Start one helper session with courier_spawn and give it this task, word for word: "Find out from
-> the user which greeting they want to use: Hello, Hi or Hey. Then report the chosen greeting to the
-> session that started you." Do not ask the user anything yourself before the helper does, and do
-> not do the task yourself. When the helper reports back, reply with one line: GREETING \<the
-> greeting it reported\>
-
-The child is not told how to ask: the brief's line on the question tool is under test. The script
-answers with `COURIER_ANSWER` when the parent asks. Six checks: the child asked and the parent asked
-the person; it did not answer by itself; it used the child's options; it passed the answer on; the
-child reported it; the reply holds it.
+`COURIER_SCENARIO=question`. The child must ask the person a question; it is not told how, so the
+brief's line on the question tool is under test. The script answers with `COURIER_ANSWER` when the
+parent asks, and checks that the parent relayed the child's options and the answer rather than
+answering itself.
 
 ## Recursive orchestration
 
-`COURIER_SCENARIO=recursive`: one split at the root and one more below it. The parent is asked:
-
-> Have this job done through helper sessions started with courier_spawn, one session per part, and
-> do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the
-> session that gets it hands to two sessions of its own: one runs `` `echo $((17 * 23))` `` and writes
-> the number it printed to numbers/a.txt, the other runs `` `echo $((2 ** 10))` `` and writes the
-> number it printed to numbers/b.txt. Part "count" runs `` `echo $((99 - 57))` `` and writes the number it printed to count/total.txt. When the parts have reported back, read the
-> three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
-
-The checker (`e2e/real-model-recursive.mjs`) reads every session reached from the root and makes
-nine checks: the root spawned two or more in its first turn and ended it, reports steered into it
-allowed; no orchestrator polled (one look after each report is allowed); a
-child spawned two or more of its own in one turn, and no sub-orchestrator started exactly one without
-a tool call of its own before it (a heuristic for a verifier that starts one implementor: the
-transcript shows work, not what it was for); no
-session went past `maxDepth`; every session reported with a status; each sub-orchestrator reported
-once, after its children (a child whose report was sent before the sub-orchestrator's own still
-counts, though it reached the sub-orchestrator after); the files and the reply hold the values. Its notes say who loaded the skill
-and when, who used a check-in or had a spawn refused.
+`COURIER_SCENARIO=recursive`: one split at the root and one more below it. The checker
+(`e2e/real-model-recursive.mjs`) reads every session reached from the root: the root spawns two or more
+children in its first turn and a child two or more of its own in one turn, nobody polls, no session goes past `maxDepth`, every session reports with a status,
+each sub-orchestrator reports once after its children, and the files and the reply hold the values.
+A sub-orchestrator that starts exactly one child with no tool call of its own before it fails (a
+heuristic for a verifier that starts one implementor). Its notes say who loaded the skill and when,
+and who used a check-in or had a spawn refused.
 
 `e2e/real-model-prompt-open.txt` leaves the split to the root. With it, the "two or more children"
-checks fail by design when the root keeps a part, so read the split from the transcripts. The
-scripted prompt fixes the split; the open prompt shows how the root makes one.
+checks fail by design when the root keeps a part, so read the split from the transcripts.
 
 ## A part that goes wrong
 
-`COURIER_SCENARIO=recursive-fault`: the recursive job with one half told to report `partial` first,
-then finish when its parent says so. It tests the skill's steps 4 to 6. The prompt passes that half
-its task word for word:
-
-> Have this job done through helper sessions started with courier_spawn, one session per part, and
-> do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the
-> session that gets it hands to two sessions of its own, doing neither half itself: one runs
-> `` `echo $((17 * 23))` `` and writes the number it printed to numbers/a.txt; the other gets
-> this task, passed on word for word: "Run `` `echo $((2 ** 10))` ``. Do not write any file
-> yet: report status partial with the number it printed, saying that writing it to numbers/b.txt is
-> left, and end your turn. Once the session that started you sends you a message to finish, write the
-> number to numbers/b.txt and report status done." Part "count" runs `` `echo $((99 - 57))` ``
-> and writes the number it printed to count/total.txt. When the parts have reported back, read the
-> three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
-
-The checker runs with `--fault` (recorded in `summary.json`, so `--saved` repeats it): the nine
-checks, then four. The faulty session is found by its first non-`done` report: the fault reached a
-leaf; its parent messaged it after the leaf's first message that was not `done` and before reporting
-upward; it then reported `done`; its parent reported upward once, `done`. That first message is a
-report or a message without a status, counted from when the leaf sent it, so a parent that answers
-it before the report has reached it, from what `courier_tree` shows, passes. "Session …
-reported 2 times" is expected for it.
+`COURIER_SCENARIO=recursive-fault`: one half is told to report `partial` first and finish when its
+parent says so. It tests the skill's steps 4 to 6: the parent messages the leaf before reporting
+upward, the leaf then reports `done`, and the parent reports upward once. A parent that answers the
+leaf from what `courier_tree` shows, before the report has reached it, passes. "Session …
+reported 2 times" is expected for the leaf.
 
 ## A part with a core
 
 `COURIER_SCENARIO=recursive-staged`: the "numbers" part has a seed both halves need, so a correct
-session does the seed first, then starts the halves together. The prompt does not say to:
-
-> Have this job done through helper sessions started with courier_spawn, one session per part, and
-> do no part yourself. It has two parts. Part "numbers" has a seed and two halves; the session that
-> gets it hands the halves to two sessions of its own. The seed: run `` `echo $((7 * 61))` ``
-> and write the number it printed to numbers/seed.txt. The halves each read the seed from
-> numbers/seed.txt: one writes the seed times 17 to numbers/a.txt, the other writes the seed plus 1000
-> to numbers/b.txt. Part "count" runs `` `echo $((99 - 57))` `` and writes the number it
-> printed to count/total.txt. When the parts have reported back, read the four files yourself and
-> reply with one line: RESULTS \<seed\> \<a\> \<b\> \<total\>
-
-The checker runs with `--staged`: the nine checks, then three. A `sleep` before any spawn, in a prompt
-that has one, is the core's work, not polling. The core is found by the first write of its file (`write`, `edit`, `patch`,
-or a shell redirect; `cd numbers && echo … > seed.txt` is not seen). The checks: no half started
-before the seed was written (or its session reported); the session that staged started two or more
-halves together; it reported upward once, `done`.
-
-Run it with the skill and without, several runs each, and read them with the table script. The skill says nothing about staging, so the pair shows whether staging depends on it:
-
-```bash
-run() {  # run <name> [VAR=value ...]
-  local name=$1; shift
-  env COURIER_SCENARIO=recursive-staged E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
-  echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
-}
-for n in 1 2 3 4 5; do run staged-skill-$n; run staged-noskill-$n COURIER_SKILL=deny; done
-bun script/real-model-table.ts $(for n in 1 2 3 4 5; do echo skill=$HOME/courier-runs/staged-skill-$n noskill=$HOME/courier-runs/staged-noskill-$n; done)
-```
+session writes the seed first, then starts the halves together. The prompt does not say to, and
+neither does the skill, so run it with the skill and without (`COURIER_SKILL=deny`), several runs
+each, to see whether staging depends on it. A `sleep` before any spawn is the core's work, not
+polling. The core is found by the first write of its file; a `cd numbers && echo … > seed.txt` is not
+seen.
 
 ## A finding passed on
 
-`COURIER_SCENARIO=recursive-finding`: the recursive job with parts that wait on files before they
-print: the "count" session must still be running when the person writes, and the halves when the
-finding has come down two levels. The checker, run with `--finding`, plays the person: once the
-"count" session's turn runs, it prompts that session that every file of the job must hold its number
-followed by ` checked`, then creates `.go-count`, which lets that part go on. Once each session the
-other part started has been sent a message without a status after the finding reached that part, or
-was started after it with the finding in its task, it
-creates `.go-halves`, which lets the halves go on.
+`COURIER_SCENARIO=recursive-finding`: the person sends the "count" session a new requirement
+mid-run; the plugin passes it up, and the skill says to pass it on to the parts it changes. The
+parts wait on files (`.go-count`, `.go-halves`) that the checker creates once the finding has come
+down far enough, so the sessions are still running when it arrives. The checks follow the words: the
+root got the plugin's `route="prompt"` envelope and passed them on, without a status, to the other
+part, which passed them on to each of its halves.
 
-A failing run waits out no timeout. The checker creates a file as well once the finding can no
-longer end the wait on it: when every session has ended its turn or sits in a shell call that waits
-on a file not yet created, and at least one waits on that file. Nothing can then move before the
-wait runs out, so the checker ends it, `.go-count` before `.go-halves`, one file a reading. A
-session still in its turn, one just started and one whose wait is over all count as moving, and so
-does the other part's session while a message the root sent it has not arrived. The log names why,
-by where the finding stopped: the root has it and ended its turn without passing it on to each
-other part; the other part's session has it and ended its turn without passing it on to each of its
-sessions; the root passed it to a session that sits in the wait itself; it has not reached the
-root; or the person's message was never written, for want of a "count" session at depth 1 in a turn
-to take it. The decision is `releaseOf` in `e2e/real-model-recursive-release.mjs`, a pure function
-of the transcripts. The 150 s in each command only bounds a wait whose checker has stopped.
-
-The prompt says another process creates those files and no session touches them, so a run's
-timeline shows whether one did. Neither the prompt nor the person's message says to pass the finding on: the plugin
-passes it up, and the skill says to pass it on to the parts it changes.
-
-The checks: the nine, with each file holding `<number> checked`, then four. The person's message
-reached the "count" session; the root holds the plugin's `route="prompt"` envelope naming that
-session; the root passed the words on, without a status, to the other part after the envelope; that
-part's session passed them on to each of its halves, by message or in the task of a half started
-after they arrived. Notes say whether the "count" session also sent the words up itself, and quote
-every message to it after the envelope.
-
-The checker finds the "count" session by `99 - 57`, or `count/total.txt` in a sentence of its task that
-holds no negation and does not call the file another part's ("the other part writes count/total.txt"
-names it to forbid touching it). The checks read the session the plugin's envelope names
-(`route="prompt"`, the session that was told), not the first session whose task names the file; with
-no such envelope they read the first depth-1 session that matches.
-
-```bash
-run() {  # run <name> [VAR=value ...]
-  local name=$1; shift
-  env COURIER_SCENARIO=recursive-finding E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
-  echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
-}
-for n in 1 2 3; do run finding-skill-$n; run finding-noskill-$n COURIER_SKILL=deny; done
-bun script/real-model-table.ts $(for n in 1 2 3; do echo skill=$HOME/courier-runs/finding-skill-$n noskill=$HOME/courier-runs/finding-noskill-$n; done)
-```
-
-A slow model needs `COURIER_TIMEOUT=600`: with steps of 20 s or more the default wait gives up while
-a sub-orchestrator's wake turn still runs.
+A failing run waits out no timeout: once nothing can move before the waits run out, the checker
+creates the files itself, and the log names where the finding stopped. That decision is `releaseOf`
+in `e2e/real-model-recursive-release.mjs`. The 150 s in each command only bounds a wait whose
+checker has stopped.
 
 ## Words against a task
 
-`COURIER_SCENARIO=recursive-conflict`: a smoke check of the `route="prompt"` envelope's wording against
-text that contradicts a session's task, run five times. It measures no wording against another. The
-prompt is [A finding passed on](#a-finding-passed-on)'s, and the checker, run with `--conflict`, plays
-the person. It creates `.go-count` as soon as the "count" session runs. It finds the half for
-`numbers/b.txt` at depth 2 by `2 ** 10` or `numbers/b.txt` in a sentence of its task that holds no
-negation ("Do not modify numbers/b.txt" names the file to forbid it), and once that half has an
-assistant message and no settled report, prompts it:
+`COURIER_SCENARIO=recursive-conflict`: a smoke check of the `route="prompt"` envelope's wording
+against text that contradicts a session's task, run five times. It measures no wording against
+another. It uses [A finding passed on](#a-finding-passed-on)'s job and release; the person tells the
+half for `numbers/b.txt` not to write that file. The checks: the file is not written, the half still
+reports its number, and the root's reply says why the file was left.
 
-> Do not write numbers/b.txt. Print the number and report it to the session that started you; that
-> file is handled outside this job.
-
-then creates `.go-halves`. The item is delivered at the half's step after its wait ends, so the
-sessions above read the envelope after the half has started acting on the words.
-
-A run with no session to write to waits out no timeout either: the release of
-[A finding passed on](#a-finding-passed-on) holds here. Once every session has ended its turn or
-sits in a wait, the checker creates `.go-count` when no session at depth 1 has run the "count"
-part, and `.go-halves` when no half for `numbers/b.txt` at depth 2 is in a turn to take the
-person's message, as when the root started the halves itself. Its log names which.
-
-The checks that read the half read the session the plugin's envelope names (`route="prompt"`, the
-session that was told), not the first session whose task names the file; with no such envelope they
-read the first depth-2 session that matches.
-
-The checks: the seven of the recursive set that do not read the files or the reply, then six. The
-files hold `391` and `42` and `numbers/b.txt` does not exist; the half's report to its parent holds
-`1024`; the root's final reply names the file and says why it was left; the words reached the half as
-a `user` item; the envelope naming the half reached the session that started it and the root; no
-session wrote `numbers/b.txt`.
-
-Every message to the half after the envelope is quoted in the notes. Those matching
-`/write .*b\.txt/i`, `/as your task says/i`, `/finish your task/i` or `/still required/i` are marked
-`possible countermand`. The mark is no check: a message that repeats the person's words matches the
-first pattern too.
+Every message to the half after the envelope is quoted in the notes, and those that look like an
+order to write the file anyway are marked `possible countermand`. The mark is no check: a message
+that repeats the person's words matches too.
 
 **The person's step.** A person reads the quoted messages of each run and records how many are
 countermands, messages telling the half to drop the text and do its task as given. That count, not
@@ -314,111 +166,31 @@ runs reopens the wording of `typedNotice`, which says after "acts on it." that t
 what the text means for its part"; a new wording is checked the same way, five runs. Fewer than two
 leaves the text as it is.
 
-```bash
-for n in 1 2 3 4 5; do
-  env COURIER_SCENARIO=recursive-conflict E2E_WORK="$HOME/courier-runs/conflict-$n" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/conflict-$n.log"
-done
-```
-
 ## A finding a session makes
 
-`COURIER_SCENARIO=discovery`: three parts side by side, one of which comes upon something the other
-two cannot work without. In [A finding passed on](#a-finding-passed-on) the person brings the
-finding; here a session meets it in its own work. The project is `e2e/fixtures/discovery-project`:
-`api.sh`, whose `init` makes a random key, prints it once and keeps only its checksum, and whose
-`get a` and `get b` print `1999` and `2550` when given that key and an error without it. The key
-exists only once the "init" part has run, so no session can know it beforehand, by reading `api.sh`
-or otherwise: a part that stays inside the project gets it through courier or not at all. The parent is asked:
+`COURIER_SCENARIO=discovery`: three parts side by side; "init" makes a key the other two need. In
+[A finding passed on](#a-finding-passed-on) the person brings the finding; here a session meets it
+in its own work. The fixture `e2e/fixtures/discovery-project` makes the key at random, so no session
+can know it beforehand: it reaches the others through courier or not at all. Nothing in the prompt
+says to tell anyone; the brief tells the "init" session to send its parent what others need, and the
+skill tells the root to pass it on. The checker (`e2e/real-model-discovery.mjs`) releases the
+waiting parts once the root has passed the key on, or once it no longer can.
 
-> This project has a price API, api.sh: once `` `sh api.sh init` `` has been run,
-> `` `sh api.sh get <id>` `` prints the amount of an item as a whole number of cents. Have this job
-> done through helper sessions started with courier_spawn, one session per part, all started
-> together, and do no part yourself: run no api.sh command. It has three parts. Part "init" runs
-> `` `sh api.sh init` ``, once, and reports what it printed. Part "a" first runs
-> `` `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done` `` exactly as written, then
-> gets the amount of item a from the API and writes it to out/a.txt. Part "b" first runs
-> `` `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done` `` exactly as written, then
-> gets the amount of item b from the API and writes it to out/b.txt. Another process, outside this
-> job, creates .go-parts when parts "a" and "b" may go on: no session creates, removes or looks at
-> that file. When the parts have reported back, read out/a.txt and out/b.txt yourself and reply with
-> one line: RESULTS \<a\> \<b\>
-
-Nothing in the prompt says to tell anyone. The brief tells the "init" session to send its parent
-what the other parts need, without a status; the skill tells the root to pass it on to the parts it changes. The checker
-(`e2e/real-model-discovery.mjs`) creates `.go-parts` once the root has sent each of the other parts
-a message without a status that holds the key, or started them after it with the key in the task.
-It creates the file as well once the key can no longer come in time, so a failing run waits out no
-timeout: when the root has ended its turn on the key without passing it on to each part, or when the
-"init" session has reported, the key in no message of its own, and the root is idle. The 150 s in
-the command only bounds a wait whose checker has stopped.
-
-The checker tells the parts apart by what each session ran: the wait on `.go-parts` makes it "a" or
-"b", by the file its task names; `api.sh init` without that wait makes it "init". A session that has
-run neither counts by its task: one that holds the wait is "a" or "b".
-
-Nine checks: the root spawned the three parts in its first turn; it ended that turn; it did not poll;
-every session reported with a status; a message or report from the "init" session holding the key
-reached the root, or the root read it with `courier_tree` before that message arrived; the
-root passed the key on to each other part without a status after that;
-each of those parts had it before it reported, and the root stopped no part and started none twice;
-the files hold `1999` and `2550`; the reply holds both. The notes say how the key came (without a
-status before the report, in the report, or by the root's own look), and with how many parts yet to
-report; they quote what the root told each part. A `finding:` note, and the same under `finding` in
-`summary.json`, give what a batch counts: whether the key reached the root, how many of the other
-parts had it before they reported, and how many turns the root took.
-
-The key is not out of a part's reach: the run's work directory, one level above the project, holds
-the server's log and OpenCode's own files, with the "init" session's shell output in them. The notes
-name a part that ran `init`, touched the key's file or searched those files for the key, whose file
-then does not show the relay.
-
-A root that runs "init" first and starts the others after its report fails the first
-check alone, and the notes call it staged.
-
-```bash
-run() {  # run <name> [VAR=value ...]
-  local name=$1; shift
-  env COURIER_SCENARIO=discovery E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
-  echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
-}
-for n in 1 2 3 4 5; do run discovery-skill-$n; run discovery-noskill-$n COURIER_SKILL=deny; done
-bun script/real-model-table.ts $(for n in 1 2 3 4 5; do echo skill=$HOME/courier-runs/discovery-skill-$n noskill=$HOME/courier-runs/discovery-noskill-$n; done)
-```
+The `finding:` note, and `finding` in `summary.json`, give what a batch counts: whether the key
+reached the root, how many parts had it before they reported, and how many turns the root took. A
+root that runs "init" first and starts the others after its report fails only the check that the root spawned the three parts in its first turn, and
+the notes call it staged. The key is not wholly out of reach: the work directory above the project
+holds the server's log with the "init" shell output, so the notes name a part that went looking
+there, whose file then does not show the relay.
 
 ## A change and its review
 
-`COURIER_SCENARIO=review`: a code change, reviewed by a session with fresh context, then fixed and
-checked. The project is `e2e/fixtures/review-project`, a Node module with one function and two
-tests that run with `npm test`, committed into the work directory so that an isolated session's
-worktree holds it. The parent is asked:
-
-> The tests of this project run with `npm test`. The job: add a function `slugify(text)` to
-> lib/words.js, exported like the one already there, that lower-cases the text, turns every run of
-> characters other than letters and digits into one hyphen and strips hyphens from both ends, so that
-> "Hello, World!" gives "hello-world"; with tests for it in test/words.test.js, at least three, one of
-> them for text with punctuation at both ends. Do none of the work yourself. First, one helper session
-> started with courier_spawn makes the change and reports. Once it has reported, one review session
-> with fresh context, started with courier_spawn, reads the change against this job, changes nothing
-> and reports what it found. Then have any finding that holds fixed by a helper session. Finally run
-> `npm test` yourself and reply with one line: REVIEWED \<the number of passing tests\>
-
-The shape is in the prompt, so the plugin's tools are under test and not a playbook; which agent
-each stage ran with is a note. The checker (`e2e/real-model-review.mjs`) tells the stages apart by
-order at the root: the sessions started before any report are the change, the first started after
-that report is the review, those started after the review's report are the fix. It runs the
-project's tests itself in the root's checkout (`COURIER_TEST_COMMAND`; the runner's output goes to
-`tests.txt`, and the totals are read from node's TAP or spec reporter) and makes ten checks: a session for the change in the first turn, which ended with no
-report in it; a review session in a later turn; the review session and anything it started changed
-nothing (no `write`, `edit` or `patch`, no shell command that commits, stages, installs, edits in
-place, redirects into a file, or removes, moves, copies or creates one; the script given to
-`sh -c` or `bash -c`, or fed to a shell as a heredoc, is read too; a file under `/tmp/` does not
-count, a `>` inside a quoted string is not a redirect, and the name of a file command counts only
-where a command stands); its report reached the root before the final reply; no polling;
-every session reported with a status; the root ran the tests itself after the review's report; the
-files exist and the first holds the symbol (`COURIER_EXPECT`); the tests pass, `COURIER_TESTS` or
-more; the reply holds `REVIEWED` and that number. Its notes say, per session the root started, which
-stage it was, its agent and isolation; what the change made and committed; what the review
-read and ran and what it reported; what the root did after the review, itself or through sessions.
+`COURIER_SCENARIO=review`: a code change in `e2e/fixtures/review-project`, reviewed by a session
+with fresh context, then fixed and checked. The shape is in the prompt, so the plugin's tools are
+under test and not a playbook. The checker (`e2e/real-model-review.mjs`) tells the stages apart by
+order at the root, checks that the review session and anything it started changed nothing, and runs
+the project's tests itself in the root's checkout (`COURIER_TEST_COMMAND`, output in `tests.txt`).
+Its notes give each stage's agent and isolation and what the review read, ran and reported.
 
 ## Comparing conditions
 
@@ -429,11 +201,15 @@ several times:
 ```bash
 run() {  # run <name> [VAR=value ...]: work directory and log under ~/courier-runs/<name>
   local name=$1; shift
-  env COURIER_SCENARIO=recursive E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
+  env E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
   echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
 }
-run base-1
-run open-1 COURIER_PROMPT="$(cat e2e/real-model-prompt-open.txt)"
+run base-1 COURIER_SCENARIO=recursive
+run open-1 COURIER_SCENARIO=recursive COURIER_PROMPT="$(cat e2e/real-model-prompt-open.txt)"
+for n in 1 2 3 4 5; do
+  run staged-skill-$n COURIER_SCENARIO=recursive-staged
+  run staged-noskill-$n COURIER_SCENARIO=recursive-staged COURIER_SKILL=deny
+done
 ```
 
 ### Reading many runs
@@ -445,13 +221,11 @@ bun script/real-model-table.ts baseline=$HOME/courier-runs/base-1 open=$HOME/cou
 bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory is its own condition
 ```
 
-A label before `=` names the condition; several directories may share one. A path that is no run is
-skipped with a line on stderr. Each row has the verdict, the score, skill loads per depth, polled
-sessions, requests, the cache read tokens per request (the provider's prompt
-cache hits over the whole tree), the uncached input tokens per request (what the provider read
-anew), both `-` for a summary written before they were kept, the duration and
-the `split:` lines. A line under each table gives the means over its finished runs. The cache
-column is what a change to the role part is judged by: compare it before and after, on one model.
+A label before `=` names the condition; several directories may share one. Each row has the
+verdict, the score, skill loads per depth, polled sessions, requests, the cache read and uncached
+input tokens per request, the duration and the `split:` lines; a line under each table gives the
+means over its finished runs. The cache column is what a change to the role part is judged by:
+compare it before and after, on one model.
 
 **How many runs a claim needs.** A claim such as "the polling went away" is about a rate. Five
 finished runs per condition on each of two models is the floor; with fewer, call the result an
@@ -460,7 +234,6 @@ after.
 
 ## Caveats
 
-This is a smoke test, not a benchmark: a few runs on one model. A
-model that passes here can still poll or forget to report on a harder task, so a `courier_later`
-check-in still pays. Which session loads the skill varies from run to run; on one-result tasks,
-models do not load it.
+This is a smoke test, not a benchmark: a few runs on one model. A model that passes here can still
+poll or forget to report on a harder task, so a `courier_later` check-in still pays. Which session
+loads the skill varies from run to run; on one-result tasks, models do not load it.

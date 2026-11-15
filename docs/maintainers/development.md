@@ -40,8 +40,8 @@ and openssl. New behaviour gets a scenario there.
   `SUITE`, which the run log prints as `group <name>: N s`; update them when a group changes much). `restart-question` and `roster` always share a
   shard (`BOUND`). `epilogue`, the server log check, runs last in every shard. `E2E_PLAN=1` prints
   what a run would do.
-- The mock model holds a child's reply back 5 s (`CHILD_DELAY_MS`), so the parent is idle when it
-  lands. A scenario that does not need that sets `child_delay 1000` after its heading.
+- The mock model holds a child's reply back a few seconds (`CHILD_DELAY_MS`), so the parent is idle
+  when it lands. A scenario that does not need that sets `child_delay 1000` after its heading.
 - The suite's config sets `nativeChildren`, which the plugin logs and does not read, so every child
   is standalone unless the mock passes `native: true`. A scenario about a native child prompts through
   the API (`api_prompt`), not `opencode run` ([the trap](plugin-api-notes.md#native-parentid)).
@@ -61,10 +61,7 @@ npm registry and redirects every other request to the real one.
 
 ## Recording the demo
 
-The README's GIF, two issues fixed in parallel by an orchestrator, a lead per issue and their four
-workers, with one worker's finding passed on by its lead to the sibling it changes, walked through in
-the tree panel, is made in two steps, neither in CI: each step has a caption under the screen, and
-each key pressed shows beside it.
+The README's GIF is made in two steps, neither in CI:
 
 ```bash
 OPENCODE_BIN=... script/record-gif.sh demo-gif                 # about 2 minutes, in real time
@@ -72,38 +69,21 @@ uv run script/render-gif.py demo-gif docs/demo.gif             # about 1 minute
 ```
 
 `record-gif.sh` drives the TUI in `tmux`, scene by scene, on `e2e/tui.sh`'s setup, with the helpers
-of `script/demo-lib.sh`. It needs tmux and what `e2e/tui.sh` needs. It sets the TUI's session
-verbosity to `medium` in `cli.json`, so the transcript shows each tool call with its arguments, not
-a count of them. A scene whose screen does not
-come ends the run, printing that screen. It keeps tmux's own screens, about twelve a second, so the
-render needs no terminal emulator: `render-gif.py` draws them with Pillow and has ffmpeg encode the
-GIF; it needs ffmpeg, uv and `fc-match`. The scenario is `e2e/mock-model.mjs`'s
-`demoTree`; `MOCK_CHILD_DELAY_MS` (`7000`) paces its workers, each of whose messages takes two to
-four times it. A `look` puts the spotlight on the lines a caption is about, and `hold` moves it with
-them when the transcript scrolls; `zoom on` and `zoom off` mark the moments that carry the story,
-where the render magnifies the spotlight.
+of `script/demo-lib.sh`, and keeps tmux's own screens; it needs tmux and what `e2e/tui.sh` needs. A
+scene whose screen does not come ends the run, printing that screen. `render-gif.py` draws the
+screens with Pillow and has ffmpeg encode the GIF; it needs ffmpeg, uv and `fc-match`. The scenario
+is `e2e/mock-model.mjs`'s `demoTree`, paced by `MOCK_CHILD_DELAY_MS`. In the scenes, `look` puts the
+spotlight on the lines a caption is about, `hold` moves it with them when the transcript scrolls,
+and `zoom on` and `zoom off` mark the moments the render magnifies.
 
-The recording takes `COLS` and `ROWS` (`160`, `40`), the terminal's size, `PACE` (`1`), which
-scales the holds after each step (`0.3` for a quick check), and `TYPE_DELAY` (`0.05`), the seconds
-per typed key.
-
-The render takes `FONT_SIZE` (`14`), `FPS` (`10`) and `IDLE` (`2.5`), and the fonts as `MONO_FONT`,
-`MONO_BOLD_FONT`, `FONT` and `KEY_FONT` (else `fc-match`'s DejaVu Sans Mono, Inter and DejaVu Sans).
-Two more settings are for what moves:
-
-| Setting | Default | |
-|---|---|---|
-| `MOTION_FPS` | `20` | The frame rate while something animates: the spotlight's glide, a caption's turn, a key's badge, a click's ripple, the zoom. `10` halves those frames. |
-| `ZOOM` | `1.15` | How much a zoomed spotlight is magnified; `1` for none. |
-
-A frame is written only when the picture changes. The line along the bottom edge is the progress,
-moving once a second and full on the last frame, with a tick where each scene starts. The last frame holds for 3 s and
-dissolves into the first.
+The recording takes `COLS` and `ROWS`, `PACE` (scales the holds after each step; `0.3` for a quick
+check) and `TYPE_DELAY`. The render takes `FONT_SIZE`, `FPS`, `IDLE`, `MOTION_FPS` (the frame rate
+while something animates), `ZOOM` (`1` for none) and the fonts as `MONO_FONT`, `MONO_BOLD_FONT`,
+`FONT` and `KEY_FONT`.
 
 `docs/demo.gif` stays under 3 MB: the README loads it from GitHub. A frame that changes the whole
-picture costs 50 to 80 KB, so the shade around the spotlight cuts in and out while the box glides,
-and the zoom magnifies the spotlight alone, not the screen. `render-gif.py` prints the size; over the
-limit, render with `MOTION_FPS=10` or `ZOOM=1`.
+picture costs 50 to 80 KB, which is why the zoom magnifies the spotlight alone, not the screen.
+`render-gif.py` prints the size; over the limit, render with `MOTION_FPS=10` or `ZOOM=1`.
 
 ## CI
 

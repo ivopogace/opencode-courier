@@ -59,15 +59,13 @@ A parent calls `courier_spawn`, gets the child's session id at once, and ends it
 or stuck, the child calls `courier_send` with a status (`done`, `partial`, `blocked` or `failed`).
 The message lands in the parent's inbox and starts a new turn if the parent is idle.
 
-Each report wakes the parent as it comes. A child that fails (a rate or quota limit with when it
-lifts) is reported to its parent. One about to end its turn without reporting is reminded once, in
-the same turn, and its parent is told only if it still does not report. A message that does not wake
-its session is sent once more, then shown as `stalled`. From OpenCode 2.2.0 on a parent is kept told
-of each child's state, one line per child, so it need not look. Children
-and scheduled messages survive a restart. A fork of a session in a tree is told that courier did not
-start it: the brief and the children it reads of are the original's. The `courier-orchestrate` skill, listed in every session,
-tells a model when to split a task and how to check and merge the parts; how to plan and review them
-is left to your own skills. Every detail: [the reference](docs/reference.md).
+Each report wakes the parent as it comes. A child that fails is reported to its parent, with when a
+rate or quota limit lifts. One about to end its turn without reporting is reminded once, and its
+parent is told only if it still does not report. A message that does not wake its session is shown
+as `stalled`. Children and scheduled messages survive a restart. The `courier-orchestrate` skill,
+listed in every session, tells a model when to split a task and how to check and merge the parts;
+how to plan and review them is left to your own skills. Every detail:
+[the reference](docs/reference.md).
 
 ## Install
 

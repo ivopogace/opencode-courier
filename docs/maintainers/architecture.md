@@ -23,30 +23,21 @@ The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules
   part goes through the same use cases as the tools, over the RPCs `courier` and `courier-person`.
 - **Text lives next to the module that speaks it**, with one snapshot over all of it.
 
-The import rules:
+The import rules, which `test/imports.test.ts` states in full:
 
-- A module is imported from outside only through its `index.ts`, except by the two other
-  entrypoints. `src/tui.tsx` imports only `@opencode/plugin/tui` itself (no subpath, no `solid-js`
-  or `@opentui/*`) and modules' `tui.tsx` and `rpc.ts`; `src/rpc.ts` imports only modules'
-  `rpc.ts`.
-- The only dependency between modules is `person/`'s on `tree/`, through
-  `tree/index.ts`. Each module may import `platform/**` and `kernel/**`; `platform/` imports
-  nothing outside itself.
-- A module's `text.ts` imports only `kernel/**`, `platform/json.ts` and its own `ports.ts` and
-  `domain.ts`.
+- A module is imported from outside only through its `index.ts`, except by the `tui.tsx` and
+  `rpc.ts` entrypoints, which reach only modules' `tui.tsx` and `rpc.ts`. A module's `tui.tsx`
+  imports only the TUI's host-provided packages and its own `rpc.ts`, `text.ts` and `mascot.ts`; a
+  module's `rpc.ts` only `@opencode/plugin/rpc` and `effect`.
+- The only dependency between modules is `person/`'s on `tree/`. Each module may import
+  `platform/**` and `kernel/**`; `platform/` imports nothing outside itself.
+- What must stay pure does: `kernel/` and `tree/domain.ts` import only `kernel/**` and
+  `platform/json.ts`; `skill.ts` only `kernel/**`; a module's `text.ts` those and its own module's
+  `ports.ts` and `domain.ts`. `tree/mascot.ts` and `platform/bounded.ts` import nothing.
 - `tree/store.ts` is the only file that knows its storage keys; no file outside `tree/` imports it,
   and no other file names its key prefixes.
-- A module's `tui.tsx` imports only `@opencode/plugin/tui`, `solid-js` (each with its subpaths),
-  `@opentui/*`, its `rpc.ts`, `text.ts` and `mascot.ts`; a module's `rpc.ts` only
-  `@opencode/plugin/rpc` and `effect`.
-- `kernel/` imports only `kernel/**` and `platform/json.ts`; `skill.ts` only `kernel/**`;
-  `tree/domain.ts` only `kernel/**` and `platform/json.ts`, so it stays pure. `tree/mascot.ts` and
-  `platform/bounded.ts` import nothing.
 - `effect` is imported only by `person/question/`, `index.ts`, the `tools.ts` and the `rpc.ts` files.
-- `person/` outside `person/question/` reaches the question relay only through
-  `person/question/index.ts`.
-- Only `index.ts`, `skill.ts`, `rpc.ts` and `tui.tsx` sit at the top of `src/`; only `index.ts`
-  imports more than one module's `index.ts`, and nothing imports it.
+- Only `index.ts` imports more than one module's `index.ts`, and nothing imports it.
 
 ## Storage
 
@@ -90,22 +81,16 @@ The host facts behind this are in [plugin-api-notes.md](plugin-api-notes.md#the-
 - **The wake store** (`wake/`) holds courier messages waiting in an inbox, which the limits count
   (`waitsInInbox`). `courier_send` writes that row itself once `synthetic`
   returns (`noteSent`), since the enqueued event is handled apart from the call.
-- **Is it running** (`busy`, `src/tree/domain.ts`; `runs`, `src/tree/running.ts`) reads `time.busy`
-  first: `busy` not later than `idle` is rest at `idle`, with no transcript read and none of the
-  caching below, whatever a rename, an archive, a switch or a waiting inbox item stamped on
-  `updated`; `busy` later than `idle`, or set with no `idle`, goes by the transcript; `busy` absent
-  (a host before 2.2.2) goes by `updated > idle` and then the transcript. A new `busy` is a new
-  stamp for the cache.
-- **The cache.** Each instance caches the answer per session (`ANSWERS_MAX`, 500 per port) until the
-  next stamp. A rest read within `FRESH_MS` (10 seconds) of its stamp is read again; a rest answer
-  is kept `REST_MS` (30 seconds) at most, a running one until the next stamp. An unreadable or empty
-  transcript reads running.
+- **Is it running** (`busy` in `src/tree/domain.ts`, `runs` in `src/tree/running.ts`) trusts
+  `time.busy` against `time.idle` first and reads the transcript only when they cannot tell, since
+  `time.updated` moves for things that are no turn. Each instance caches the answer per session until
+  the next stamp; a rest answer is re-read soon after its stamp and kept only briefly, because a
+  delivered item stamps nothing until its first step. An unreadable or empty transcript reads
+  running.
 - **Re-sending** (`wakeAgain`, `src/tree/wake.ts`) reads the session first, in case a turn's
-  `started` came before the subscription: a `busy` at or after the message was last left waiting
-  (enqueued, seen waiting as a turn ended, or sent again) and later than `idle` marks the message as
-  a running turn's to take; an earlier one, or one `idle` has passed (that execution ended, its event
-  missed), re-sends, with no transcript read. Without `busy` only a transcript actually read marks
-  it running, so a failed read re-sends.
+  `started` came before the subscription: a `busy` since the message was last left waiting, and
+  later than `idle`, leaves the message to that running turn; otherwise it re-sends. Without `busy`
+  only a transcript actually read marks it running, so a failed read re-sends.
 
 ## Instruction entries
 
@@ -116,7 +101,10 @@ The courier writes two [keyed session instructions](plugin-api-notes.md#keyed-se
   its entry again, ending with the line about OpenCode's own message at a
   [native child's turn end](plugin-api-notes.md#native-parentid): that put comes after the
   parent's first prompt, so it leaves the baseline and the cached prefix alone and reaches the model
-  as one instruction update, as a root's entry does at its first spawn.
+  as one instruction update, as a root's entry does at its first spawn. Later native spawns put the
+  same value, which announces nothing; the puts for one parent run one at a time, so two spawns in
+  one step cannot leave the older value. Where the role goes in a system part instead, `context.ts`
+  adds the same line.
 - `standing`: a parent's children (`tree/standing.ts`, from the tools and events that move a child,
   removed with the last child).
 

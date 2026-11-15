@@ -276,7 +276,7 @@ order:
    be compacted away. Several whole jobs in one prompt are that many parts; below the root, never one
    session for the whole task.
 2. **Start the parts**: when they do not all fit the limits, the next is started as each report
-   frees a slot. Each report wakes the parent. No
+   frees a slot; a blocked part keeps its slot. Each report wakes the parent. No
    two parts edit the same files, `isolate: true` where they edit in parallel. Each task says what
    to produce, the context, how to check it, what to report and the skills to load from those the
    parent sees listed (an isolated part sees only committed project skills). A part that depends on

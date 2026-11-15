@@ -279,7 +279,7 @@ and would go idle. Its name and shape may still change: a pin bump re-checks bot
 ## Managed policy
 
 - The loader refuses a plugin the organisation's managed policy denies: `plugin.use` on the plugin's
-  target (since 2.2.3; `packages/core/src/plugin/module.ts`), before `integration.use` on
+  target (`packages/core/src/plugin/module.ts`), before `integration.use` on
   `plugin:<name>`. The policy schema (`packages/schema/src/config/policy.ts`) decodes a legacy
   `integration.use` whose resource starts `plugin:`, `skill:` or `mcp:` into the new action, so old
   policies still apply.

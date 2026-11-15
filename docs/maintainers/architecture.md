@@ -39,6 +39,14 @@ The import rules:
 - A module's `tui.tsx` imports only `@opencode/plugin/tui`, `solid-js` (each with its subpaths),
   `@opentui/*`, its `rpc.ts`, `text.ts` and `mascot.ts`; a module's `rpc.ts` only
   `@opencode/plugin/rpc` and `effect`.
+- `kernel/` imports only `kernel/**` and `platform/json.ts`; `skill.ts` only `kernel/**`;
+  `tree/domain.ts` only `kernel/**` and `platform/json.ts`, so it stays pure. `tree/mascot.ts` and
+  `platform/bounded.ts` import nothing.
+- `effect` is imported only by `person/question/`, `index.ts`, the `tools.ts` and the `rpc.ts` files.
+- `person/` outside `person/question/` reaches the question relay only through
+  `person/question/index.ts`.
+- Only `index.ts`, `skill.ts`, `rpc.ts` and `tui.tsx` sit at the top of `src/`; only `index.ts`
+  imports more than one module's `index.ts`, and nothing imports it.
 
 ## Storage
 
@@ -62,11 +70,9 @@ race on gets keys of its own, one writer each. `test/store.test.ts` pins the tre
 | `wake/<sessionID>/<inboxID>` | A courier message waiting in an inbox: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled`. |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers. |
 
-Releases up to 0.13.8 also wrote `webhook/<topic>/<sessionID>`, a webhook subscription, and releases
-up to 0.16.4 wrote `memory/<projectID>/<topSessionID>` with its `pin` and `reads/`, a tree's record,
-and `group/<parentID>/<name>/<sessionID>`, a join group's member with the report held for it, beside
-a `group` field on that member's roster entry. Nothing reads those keys or that field now, and none
-is written again.
+A user's storage may also hold `webhook/<topic>/<sessionID>`, `memory/<projectID>/<topSessionID>`
+with its `pin` and `reads/`, and `group/<parentID>/<name>/<sessionID>` keys, and a `group` field on
+a roster entry, written by earlier releases. Nothing reads or writes them.
 
 A session owes a report while `prompt` is later than `settled`. Its parent waits on it while
 `prompt` is later than `told` too. The prompt's time is the event's `created`; the report's is the
@@ -115,7 +121,7 @@ The courier writes two [keyed session instructions](plugin-api-notes.md#keyed-se
   removed with the last child).
 
 A fork copies a session's entries; `tree/fork.ts` removes `role` and `standing` from it and leaves
-any other, such as the `lessons` entry releases up to 0.16.4 wrote.
+any other, such as a `lessons` entry an earlier release wrote.
 
 Each value stays well under 3 KiB. `standing` is `list`ed and compared before a put
 that may be the same, so an unchanged value costs one read and no write. The `context` hook lists a

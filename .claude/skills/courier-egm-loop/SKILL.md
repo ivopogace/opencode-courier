@@ -36,6 +36,11 @@ turn allows:
   given the same prompt (its worktree branches from `origin/main` by its own `git` commands).
   Its final message is its report; continue it with `SendMessage` to its agent id.
 
+A session started either way has no `@parent`. In the courier-wave child prompt, drop the
+instruction to `send_message` the turn-end block: the block is the session's final message, which
+wakes you as its task notification. courier-wave's monitoring by `send_later`, `get_session` and
+`list_events` does not apply to it either.
+
 ## The roster
 
 Keep `egm-loop-roster.md` in the scratchpad and read it first on every check-in. Per round: the

@@ -24,7 +24,7 @@ export const SKILL_CONTENT = [
   "## 2. Start the parts",
   "",
   "- One courier_spawn per part. When they do not all fit the tree's limits at once, start the next as each report " +
-    "frees a slot.",
+    "frees a slot; a blocked part keeps its slot.",
   "- Each report wakes you.",
   "- No two parts edit the same files; isolate: true for each part that edits files in parallel with another.",
   "- Write each task so the session can do it without you, since it sees none of your conversation: what to produce " +

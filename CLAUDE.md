@@ -77,6 +77,7 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   docs/maintainers/development.md. Only what a tool reads stays: a shebang, a `# shellcheck` or
   `@ts-expect-error` directive, a `uv` script header, an action pin's `# vX.Y.Z`, a Markdown marker.
 - Running several issues at once in child sessions: the `courier-wave` skill.
+- A brief prompt that starts the orchestrator in a new session: the `/orchestrator-prompt` command.
 - Adopting a new OpenCode release (its notes, the pin bump, new host features, retiring what the
   host now does itself): the `opencode-release` skill.
 - Repeating the EGM review of the skill until it finds nothing: the `courier-egm-loop` skill.

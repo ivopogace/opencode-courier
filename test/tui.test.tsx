@@ -1141,6 +1141,23 @@ describe("the tree panel following navigation", () => {
     expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_mid" })
   })
 
+  test("a tree that takes longer to read than the panel's settle shows, while its sessions keep working", async () => {
+    const fake = await opened({ ses_parent: pair(1), ses_other: { rows: [row("ses_far", { parentID: "ses_other", title: "Far away" })] } })
+    const quick = fake.state.tree
+    fake.state.tree = async (sessionID) => {
+      await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS * 1.5))
+      return quick(sessionID)
+    }
+    const working = setInterval(() => fake.emit("session.tool.called"), 200)
+    try {
+      fake.state.route = { type: "session", sessionID: "ses_other" }
+      await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS * 6))
+      expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_other" })
+    } finally {
+      clearInterval(working)
+    }
+  }, 20_000)
+
   test("hidden in a session without a tree, shows once that session starts one", async () => {
     const fake = await opened({ ses_parent: pair(1) })
     fake.state.route = { type: "session", sessionID: "ses_lonely" }

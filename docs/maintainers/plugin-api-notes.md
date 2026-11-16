@@ -77,7 +77,9 @@ older host and branches on it. How the plugin itself answers a trap is in
   `synthetic`, `compaction`, `move`), so the plugin remembers it until delivery. It also carries a
   synthetic item's `payload.metadata`, which is how `notePrompt` tells a session's own check-in and a
   status-less message from other courier messages; the `synthetic` call's returned id may arrive
-  after the `delivered` event, so it is not used.
+  after the `delivered` event, so those are told by metadata. The report reminder does match its
+  delivery by that id ([the idle hook](#the-idle-hook)); one delivered before its id is noted reads
+  as a prompt.
 - A prompt's `metadata` is copied into the inbox item's user payload by `SessionPrompt.prepare`
   (`packages/core/src/session/prompt.ts`), and `session.inbox.enqueued` carries it. A `user` item
   says nothing else about its origin: a prompt through the API or `opencode run`, the slash
@@ -161,7 +163,7 @@ and would go idle. Its name and shape may still change: a pin bump re-checks bot
   matches its inbox id to the `nudged` note rather than taking it for a new prompt.
 - `PluginHooks` (`packages/core/src/plugin/hooks.ts`) keys callbacks by name without checking it, so
   a host without the hook takes the registration and never runs it, and the parent is told of a
-  silent end as before. `src/index.ts` still registers it after the rest and logs a refusal.
+  silent end as before. `src/index.ts` registers it after the `context` hook and logs a refusal.
 - `trigger` runs every callback for the name in turn, in registration order: each loaded instance's
   (the hub's claim and the `nudged` note keep it to one reminder), after `pre` built-ins such as
   `/goal`'s, which run before package plugins (`plugin/supervisor.ts`, `plugin/internal.ts`). On a
@@ -305,8 +307,9 @@ told to wait for a pull request kept looking for another way and did not report.
 
 ## Feature flags
 
-Some features are flags (`packages/schema/src/config/flag.ts`: `schedules`, `todo`,
-`background_compaction`, `media_blob`, `artifacts`, `codemode_vm`, `console_watches`): off in a release build, on in local and dev
+Some features are flags (`packages/schema/src/config/flag.ts`: `todo`, `background_compaction`,
+`media_blob`, `schedules`, `artifacts`, `shell_timeout_background`, `console_watches`,
+`mcp_events`): off in a release build, on in local and dev
 builds, turned on by `experimental.<key>: true`, `experimental.all_flags: true` or
 `OPENCODE_FLAGS=all` (`-key` turns one off).
 
@@ -458,8 +461,7 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   changed one) or "The context under "<key>" no longer applies. Disregard it." (a removal);
   `message-updater.ts` stores it as a `system` message (`description`
   `Instructions updated: api/<key>`, the keys as stored, every key changed since the last step in
-  one message, sorted: `api/role, api/standing` at a root's first spawn, as
-  `e2e/run.sh` checks; in a turn a courier message starts, the message comes before that message),
+  one message, sorted: `api/role, api/standing` when a fork drops both, as `e2e/run.sh` checks; in a turn a courier message starts, the message comes before that message),
   which goes to the model at its place in the transcript, after the tool result that put the entry,
   as a **user** message: `<system-update>`, the text with `&`, `<` and `>` escaped,
   `</system-update>` (`wrapSystemUpdate`, `packages/ai/src/protocols/shared.ts`; AI SDK routes do
@@ -480,13 +482,13 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   (`parentID`) and `session.create` do not. `courier_cleanup` and a forgotten child leave entries
   alone: they belong to the session and go with it.
 - **A fork is announced.** After the copy, `Session.fork` (`packages/core/src/session.ts`) runs the
-  experimental `session.fork` hook (`SessionHooks.fork: { sessionID }`, since 2.3.0) with the fork's
+  `fork` session hook (`SessionHooks.fork: { sessionID }`, since 2.3.0) with the fork's
   `sessionID`, in the fork's location, failures logged and ignored; the built-in `fork-notice` plugin
   uses it to admit a `<fork-notice>` synthetic with `resume: false` (background work and
   notifications stay with the original), which waits in the fork's inbox for its first prompt. The
   fork's `Session.Info` names the original in `fork.sessionID` and carries the original's `metadata`,
   the courier's `courier.parentID` of a spawned child included; its `parentID` is empty. The courier
-  registers the hook after its others (`tree/fork.ts`, a refusal logged): it removes the fork's
+  registers the hook last, in `src/index.ts`, with `tree/fork.ts`'s `onFork` (a refusal logged): it removes the fork's
   `role` and `standing` entries and admits its own `resume: false` notice after the host's
   ([forking a session in a tree](../reference.md#roster)).
 - **What a fork's first request looks like** (`projectFork` in `session/projector.ts`,

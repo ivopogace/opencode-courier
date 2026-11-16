@@ -7,8 +7,9 @@ open an issue first so we can agree on the shape before you write it.
 
 ## Before you start
 
-- [README.md](README.md) and [docs/reference.md](docs/reference.md) describe what the plugin does;
-  a change in behaviour updates them.
+- [docs/reference.md](docs/reference.md) describes what the plugin does, each behaviour once; a
+  change in behaviour updates it. [README.md](README.md) is the short version and changes only when
+  its pitch, install, options, tools or demo do.
 - [docs/maintainers/development.md](docs/maintainers/development.md) has the commands, the live
   suites and CI.
 - [docs/maintainers/architecture.md](docs/maintainers/architecture.md) has the layout and the import
@@ -25,7 +26,7 @@ open an issue first so we can agree on the shape before you write it.
   `npx @arethetypeswrong/cli --pack --profile esm-only`.
 - A behaviour change comes with unit tests and a live scenario: in `e2e/run.sh`, which runs against
   a real OpenCode server with a scripted model and needs no API key, or in `e2e/tui.sh` for the
-  terminal part. It also updates README.md and `docs/reference.md`.
+  terminal part. It also updates `docs/reference.md`, and README.md where its short version changes.
 - A change to a string the model sees (`src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts`, a
   tool description) shows up in `test/__snapshots__/`; update it with `bun test --update-snapshots`
   and check the diff. Say so in the PR: such a change also needs a run against a real model

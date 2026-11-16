@@ -23,7 +23,8 @@ The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules
   part goes through the same use cases as the tools, over the RPCs `courier` and `courier-person`.
 - **Text lives next to the module that speaks it**, with one snapshot over all of it.
 
-The import rules, which `test/imports.test.ts` states in full:
+The import rules; `test/imports.test.ts` states them in full, with a few more (no import cycles,
+the top-level files of `src/`, which files may import the TUI's packages):
 
 - A module is imported from outside only through its `index.ts`, except by the `tui.tsx` and
   `rpc.ts` entrypoints, which reach only modules' `tui.tsx` and `rpc.ts`. A module's `tui.tsx`
@@ -47,7 +48,7 @@ race on gets keys of its own, one writer each. `test/store.test.ts` pins the tre
 
 | Key | Holds |
 |---|---|
-| `roster/<parentID>/<sessionID>` | A child's entry: title, directory, `isolated` (with `source`, `project` and `base` commit), `createdAt`, `reports: "status"`, `native`, `model` (`provider/model#variant`, when not its parent's). |
+| `roster/<parentID>/<sessionID>` | A child's entry: `sessionID`, `parentID`, title, directory, `isolated` (with `source`, `project` and `base` commit), `createdAt`, `reports: "status"`, `native`, `model` (`provider/model#variant`, when not its parent's). |
 | `roster-by-child/<sessionID>` | `{ ancestors }`, parent first, top last. Only an index: `roster/` confirms a hit. |
 | `report/<sessionID>/prompt` | `{ at }`: when a prompt last reached the session. |
 | `report/<sessionID>/settled` | `{ at, by, status, resumesAt }`: when it last reported, failed or was interrupted; `resumesAt` only for a failed turn whose provider limit gave a retry time, the event's `created` plus `retryAfterMs`. |
@@ -159,8 +160,8 @@ Two servers on one data directory share the storage but not the hub. The owner k
 
 - The owner renews the key as it delivers. Others skip their tick while the key is under 60 seconds
   old (four ticks).
-- A missing or expired key is taken after a random wait of 0.5 to 1 second and a read back, so of
-  two servers only one wins.
+- A missing or expired key is written, then read back after a random wait of 0.5 to 1 second, so
+  of two servers only one wins.
 - The owner renews without reading back only while the key is under 30 seconds old.
 - A graceful stop releases the key. After a crash, another server takes over within about 75
   seconds.

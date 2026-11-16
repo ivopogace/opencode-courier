@@ -50,7 +50,8 @@ that copies a long, odd path into a task gets it wrong.
 
 The prompts are in `e2e/real-model.sh`, the checks in the `e2e/real-model*.mjs` checkers; the run
 prints each check by name. A checker given `--saved` re-reads a run's saved transcripts instead of
-asking the server.
+asking the server, except the question relay's (`real-model-question.mjs`), which answers the
+questions as the run goes.
 
 ### Reading a stall
 

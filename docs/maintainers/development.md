@@ -93,6 +93,11 @@ passes when they are skipped. A pull request that changes only Markdown, `docs/*
 skips the live jobs; the unit job, with the docs' link check, still runs. SonarCloud fails on a new
 bug, vulnerability or unreviewed hotspot, or under 80% coverage on new code.
 
+Coverage of a `.tsx` file counts the lines of the Solid preload's output, which has no source map, so
+an uncovered line SonarCloud names in `src/tui.tsx` or a module's `tui.tsx` is a line of that output,
+not of the source. To find it, run the file through `transformSolidSource` from
+`@opentui/solid/scripts/solid-transform.js` and read the line there.
+
 `latest.yml` runs the live suites on the newest OpenCode release, nightly and on `main`, allowed to
 fail. It opens an issue when that release is newer than the pin ([the pin](releasing.md#the-plugin-api-pin)).
 

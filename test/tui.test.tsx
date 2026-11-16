@@ -671,6 +671,16 @@ describe("the tree panel", () => {
     expect(other.captureCharFrame()).not.toContain("courier")
   })
 
+  test("without its own row, says above the tree that the panel's session is stalled", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async () => ({ ...pair(1), stalled: NOW - 125_000 })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+
+    await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
+    expect(app.captureCharFrame()).toMatch(/This session is stalled: a message waits in its inbox since 2m \d\ds, woken again in vain/)
+  })
+
   test("draws the panel's own session first, its stall on its row and no bar of its own, and opens it, but neither stops nor forgets it", async () => {
     const fake = fakeContext(async () => empty)
     const top: Row = { sessionID: "ses_parent", parentID: "", title: "Root", depth: 0, state: "stalled", stalled: NOW - 125_000, isolated: false, created: NOW - 300_000, waits: [] }

@@ -548,8 +548,8 @@ courier 1 waiting on you · 1 stalled · 2 running · 1 idle
 ```
 
 It counts the sessions started with `courier_spawn` under the open one: waiting on you (a
-permission request, question or form), stalled, running, then idle. A click on it opens the
-[asks inbox](#the-asks-inbox). While a permission prompt or form shows, OpenCode hides the footer;
+permission request, question or form), stalled, running, then idle. While anything waits on you, a click on
+it opens the [asks inbox](#the-asks-inbox). While a permission prompt or form shows, OpenCode hides the footer;
 use `ctrl+x k`. Right after the server starts, the entry may take
 a few seconds to show.
 
@@ -576,7 +576,7 @@ The first row is the tree's root; the header's bar and counts are of the session
 and `x` leave the root row alone.
 
 Each row has a mark (`✓` reported, a spinner while running, `●` waiting on you, `!` stalled, `✗`
-failed), the title, its state, its report, `isolated`, `native` for a
+failed or interrupted), the title, its state, its report, `isolated`, `native` for a
 [native child](#native-child-sessions), `subagent` for one [OpenCode's subagent
 tool](#opencodes-subagents) started, and its [model](#the-model-a-child-runs-on) when that is not
 its parent's. Under it: a progress bar for an orchestrator, each ask for a session waiting on you,

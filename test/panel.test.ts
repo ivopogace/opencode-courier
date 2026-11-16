@@ -431,7 +431,7 @@ describe("panel", () => {
     expect(rows.find((row) => row.sessionID === "ses_again")).not.toHaveProperty("stopped")
   })
 
-  test("names the root of the tree the session is in, through courier_spawn and OpenCode's own children alike, and none at the root", async () => {
+  test("names the root of the tree the session is in, through courier_spawn and OpenCode's own children alike, and none at the root, through a cycle of either or both", async () => {
     const { ports } = fakePorts({
       ses_top: { updated: 5, idle: 5 },
       ses_root: { updated: 5, idle: 5, parentID: "ses_top" },
@@ -439,15 +439,19 @@ describe("panel", () => {
       ses_leaf: { updated: 5, idle: 5 },
       ses_sub: { updated: 5, idle: 5, parentID: "ses_leaf" },
       ses_loop: { updated: 5, idle: 5, parentID: "ses_loop" },
+      ses_t: { updated: 5, idle: 5, parentID: "ses_y" },
+      ses_y: { updated: 5, idle: 5 },
     })
     await childStore(ports.storage).record(entry("ses_mid", "ses_root"))
     await childStore(ports.storage).record(entry("ses_leaf", "ses_mid"))
+    await childStore(ports.storage).record(entry("ses_y", "ses_t"))
 
     expect(await panel(ports, "ses_top")).not.toHaveProperty("root")
     expect((await panel(ports, "ses_leaf")).root).toBe("ses_top")
     expect((await panel(ports, "ses_sub")).root).toBe("ses_top")
     expect((await panel(ports, "ses_root")).root).toBe("ses_top")
     expect(await panel(ports, "ses_loop")).not.toHaveProperty("root")
+    expect((await panel(ports, "ses_y")).root).toBe("ses_t")
     expect(await panel(ports, "ses_nowhere")).not.toHaveProperty("root")
   })
 

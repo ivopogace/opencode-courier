@@ -85,7 +85,7 @@ async function rootOf(ports: CourierPorts, sessionID: string) {
   const seen = new Set<string>()
   for (let at = sessionID; ; ) {
     const top = (await childStore(ports.storage).lineage(at).catch(() => [])).at(-1)?.parentID ?? at
-    seen.add(top)
+    seen.add(at).add(top)
     const above = (await ports.session.get({ sessionID: top }).catch(() => undefined))?.parentID
     if (!above || seen.has(above)) return top
     at = above

@@ -175,11 +175,11 @@ at it. A top session that has started no session yet is pointed to the skill; on
 the `root orchestrator`.
 
 **The tools a leaf is offered.** A leaf cannot start sessions, so it is offered only `courier_send`,
-`courier_tree`, `courier_later` and `courier_cancel`, as is a subagent
-[OpenCode's subagent tool](#opencodes-subagents) starts in a tree. Every other session is offered
-all eight. If you lower `maxDepth` while a session has children, it may become a leaf with children it cannot
-stop or clean up itself: a session above it does that with `courier_stop` and `cleanup: true`, or
-you stop them in the [tree panel](#the-tree-panel).
+`courier_tree`, `courier_later` and `courier_cancel`, as is a subagent [OpenCode's subagent
+tool](#opencodes-subagents) starts in a tree. Every other session is offered all eight. If you lower
+`maxDepth` while a session has children, it may become a leaf with children it cannot stop or clean
+up itself: a session above it does that with `courier_stop` and `cleanup: true`, or you stop them in
+the [tree panel](#the-tree-panel).
 
 The root may also hand a heavy task whole to one session, to keep its own context:
 `split: 1 part: <the task>, to keep my context`.
@@ -253,10 +253,11 @@ When sessions under the child are still [live](#session-trees-and-their-limits),
 no replacement: it says their reports will wake the child and that it still counts toward the
 limits.
 
-When the failure is a rate or quota limit and the provider says how long to wait, the message says how long that is and when, in UTC (with the date when it is another day),
-and not to message the child before then. A wait of more than 30 days is not given. Courier does
-not retry for you; `courier_later` can remind the parent when the time comes. The
-tree panel shows the child's row as `limit, resumes 14:32` (local time) until then.
+When the failure is a rate or quota limit and the provider says how long to wait, the message says
+how long that is and when, in UTC (with the date when it is another day), and not to message the
+child before then. A wait of more than 30 days is not given. Courier does not retry for you;
+`courier_later` can remind the parent when the time comes. The tree panel shows the child's row as
+`limit, resumes 14:32` (local time) until then.
 
 An interrupted turn is not a failure. A failure while the server is down is not seen; a
 `courier_later` check-in covers that.
@@ -271,8 +272,8 @@ check-in firing after it has reported.
 Before it goes idle owing a report, the child is reminded once, in the same turn, and the parent is
 not woken. If it still ends its turn without a report, the parent gets a message saying so, with the
 start of the child's last reply, and can tell the child to carry on or report, or start a
-replacement. A child with an active [`/goal`](#goal-and-courier-children) may get the reminder alongside the goal's
-continuation.
+replacement. A child with an active [`/goal`](#goal-and-courier-children) may get the reminder
+alongside the goal's continuation.
 
 The parent is not told while the child waits on something: its own children's reports, a permission
 request or question, a scheduled message, or background work of its own (a shell, a subagent). A

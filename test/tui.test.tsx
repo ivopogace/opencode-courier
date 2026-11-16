@@ -1158,6 +1158,45 @@ describe("the tree panel following navigation", () => {
     }
   }, 20_000)
 
+  test("a session the person opened it in shows it again when they come back, with or without a tree", async () => {
+    for (const other of [{ rows: [] }, { rows: [row("ses_far", { parentID: "ses_y", title: "Far away" })] }]) {
+      const fake = fakeContext(async () => empty)
+      fake.state.tree = async (sessionID) => (sessionID === "ses_y" ? other : { rows: [] })
+      await tui.setup(fake.context)
+      fake.state.route = { type: "session", sessionID: "ses_x" }
+      await fake.command("courier.command")!.run("tree")
+      expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_x" })
+
+      fake.state.route = { type: "session", sessionID: "ses_y" }
+      await settle()
+      await fake.command("courier.command")!.run("")
+      expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_y" })
+
+      fake.state.route = { type: "session", sessionID: "ses_x" }
+      await settle()
+      expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_x" })
+
+      fake.state.route = { type: "session", sessionID: "ses_lonely" }
+      await settle()
+      expect(fake.context.ui.panel.current()).toBeUndefined()
+    }
+  })
+
+  test("closed with q in a session it was opened in, it stays hidden there when followed back", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async (sessionID) => (sessionID === "ses_y" ? { rows: [row("ses_far", { parentID: "ses_y", title: "Far away" })] } : { rows: [] })
+    await tui.setup(fake.context)
+    fake.state.route = { type: "session", sessionID: "ses_x" }
+    await fake.command("courier.command")!.run("tree")
+    fake.context.ui.panel.close()
+    fake.state.route = { type: "session", sessionID: "ses_y" }
+    await settle()
+    await fake.command("courier.command")!.run("tree")
+    fake.state.route = { type: "session", sessionID: "ses_x" }
+    await settle()
+    expect(fake.context.ui.panel.current()).toBeUndefined()
+  })
+
   test("hidden in a session without a tree, shows once that session starts one", async () => {
     const fake = await opened({ ses_parent: pair(1) })
     fake.state.route = { type: "session", sessionID: "ses_lonely" }

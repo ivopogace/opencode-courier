@@ -554,6 +554,26 @@ click_on "FAR-CHILD" tui-tabs-new
 check "back on the other tree's tab, the panel shows it again" "$(shows "FAR-CHILD (on screen)" 30 tui-tabs-back)"
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes it there" "$(hides "courier tree" 10 tui-tabs-closed)"
+echo "the tree panel shows again in a session without a tree that the person opened it in"
+lone_one=$(prompt "LONELY-ONE" | jq -r 'select(.sessionID != null) | .sessionID' | head -1)
+lone_two=$(prompt "LONELY-TWO" | jq -r 'select(.sessionID != null) | .sessionID' | head -1)
+check "two sessions that started none" "$([ -n "$lone_one" ] && [ -n "$lone_two" ] && echo true || echo false)"
+curl -sf -u "opencode:$OPENCODE_PASSWORD" -X PATCH -H 'content-type: application/json' --data '{"title":"LONE-ONE"}' "$SERVER/api/session/$lone_one" >/dev/null
+curl -sf -u "opencode:$OPENCODE_PASSWORD" -X PATCH -H 'content-type: application/json' --data '{"title":"LONE-TWO"}' "$SERVER/api/session/$lone_two" >/dev/null
+open_tui tui-lone-two "$lone_two"
+check "the second has its own tab" "$(shows "LONE-TWO" 60 tui-lone-two)"
+open_tui tui-lone "$lone_one"
+check "the TUI is on the first" "$(shows "LONE-ONE" 60 tui-lone)"
+submit "/courier tree"
+check "/courier tree opens the panel there" "$(shows "courier tree" 30 tui-lone-panel)"
+click_on "LONE-TWO" tui-lone-panel
+check "on the second's tab, where it was not opened, it hides" "$(hides "courier tree" 10 tui-lone-other)"
+submit "/courier"
+check "/courier opens it there too" "$(shows "courier tree" 30 tui-lone-other-panel)"
+click_on "LONE-ONE" tui-lone-other-panel
+check "back on the first's tab, it shows again" "$(shows "courier tree" 30 tui-lone-back)"
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes it there" "$(hides "courier tree" 10 tui-lone-closed)"
 
 echo "the tree panel shows a subagent OpenCode's subagent tool started, under the session that started it, marked subagent (#438)"
 out=$(prompt "COURIER-SUBAGENT-START")
@@ -601,7 +621,7 @@ open_tui tui-installed "$parent"
 check "the TUI loads the installed package's tui entrypoint and shows the entry" "$(shows "courier 2 idle" 60 tui-installed)"
 
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-usage tui-tabs-far tui-tabs-far-panel tui-tabs tui-tabs-panel tui-tabs-other tui-tabs-new tui-tabs-back tui-tabs-closed tui-subagent-footer tui-subagent-panel tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-usage tui-tabs-far tui-tabs-far-panel tui-tabs tui-tabs-panel tui-tabs-other tui-tabs-new tui-tabs-back tui-tabs-closed tui-lone-two tui-lone tui-lone-panel tui-lone-other tui-lone-other-panel tui-lone-back tui-lone-closed tui-subagent-footer tui-subagent-panel tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

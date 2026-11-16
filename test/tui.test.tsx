@@ -1215,6 +1215,30 @@ describe("the /courier command", () => {
     expect(fake.state.toasts.at(-1)).toMatchObject({ message: "Open a session first", variant: "warning" })
   })
 
+  test("in a child, /courier tree opens its tree from the root, the child marked; where the root does not list it, the child's own tree", async () => {
+    const far = { rows: [row("ses_mid", { parentID: "ses_other", title: "Middle" }), row("ses_far", { parentID: "ses_mid", depth: 2, title: "Far away" })] }
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async (sessionID) =>
+      (({ ses_other: far, ses_mid: { rows: [far.rows[1]!], root: "ses_other" }, ses_far: { rows: [], root: "ses_other" }, ses_lost: { rows: [], root: "ses_other" } }) as Record<string, Tree>)[sessionID] ?? { rows: [] }
+    await tui.setup(fake.context)
+    fake.state.route = { type: "session", sessionID: "ses_far" }
+    await fake.command("courier.command")!.run("tree")
+    expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_far" })
+    const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_far").value)
+    await app.waitForFrame((frame) => frame.includes("Far away (on screen)"))
+    expect(app.captureCharFrame()).toContain("Middle")
+    await settle()
+    expect(fake.calls.filter((call: any) => call[0] === "tree").map((call: any) => call[1].sessionID)).toContain("ses_other")
+
+    fake.context.ui.panel.close()
+    fake.state.route = { type: "session", sessionID: "ses_lost" }
+    await fake.command("courier.command")!.run("tree")
+    const lost = await renderPanel(fake.claim("session.panel"), panelInput("ses_lost").value)
+    await settle()
+    await lost.renderOnce()
+    expect(lost.captureCharFrame()).not.toContain("Middle")
+  })
+
   test("/courier stop, with a session or without, shows the usage and stops nothing", async () => {
     const fake = fakeContext(async () => empty)
     fake.state.tree = async () => ({ rows: [row("ses_a", { title: "A" })] })

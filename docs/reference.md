@@ -569,7 +569,9 @@ a few seconds to show.
 ### The tree panel
 
 `/courier tree` (or *Courier session tree* in the palette) opens a panel beside the session, with
-that session as its first row and the tree under it. It is fullscreen under 108 columns.
+the root of the session's tree as its first row and the tree under it, the session marked
+`(on screen)`. The root is found through `courier_spawn` and OpenCode's own children. It is
+fullscreen under 108 columns.
 
 ```
  █▀██▀██  courier tree  [█████░░░░░] 1/2 reported
@@ -583,8 +585,7 @@ that session as its first row and the tree under it. It is fullscreen under 108 
 ↑↓ select · enter open · s stop · x forget · r refresh · f fullscreen · q close
 ```
 
-The first row is the session the panel was opened in; the header's bar and counts are of the
-sessions under it. `s` and `x` leave that row alone.
+The first row is the tree's root; the header's bar and counts are of the sessions under it. `s` and `x` leave that row alone.
 
 Each row has a mark (`✓` reported, a spinner while running, `●` waiting on you, `!` stalled, `✗`
 failed or interrupted), the title, what it does, its report, `isolated`, `native` for a

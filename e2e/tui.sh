@@ -529,6 +529,9 @@ check "and none for a root" "$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -r '.
 curl -sf -u "opencode:$OPENCODE_PASSWORD" -X PATCH -H 'content-type: application/json' --data '{"title":"FAR-CHILD"}' "$SERVER/api/session/$second" >/dev/null
 open_tui tui-tabs-far "$second"
 check "the other tree's child has its own tab" "$(shows "FAR-CHILD" 60 tui-tabs-far)"
+submit "/courier tree"
+check "/courier tree in that child opens its tree from the root, the child marked" "$(shows "FAR-CHILD (on screen)" 30 tui-tabs-far-panel)"
+check "with the root's header, which counts its older child left out" "$(grep -qF "1 older left out" "$WORK/tui-tabs-far-panel.txt" && echo true || echo false)"
 open_tui tui-tabs "$parent"
 check "the TUI is on the parent" "$(shows "courier 2 idle" 60 tui-tabs)"
 submit "/courier tree"
@@ -598,7 +601,7 @@ open_tui tui-installed "$parent"
 check "the TUI loads the installed package's tui entrypoint and shows the entry" "$(shows "courier 2 idle" 60 tui-installed)"
 
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-usage tui-tabs-far tui-tabs tui-tabs-panel tui-tabs-other tui-tabs-new tui-tabs-back tui-tabs-closed tui-subagent-footer tui-subagent-panel tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-usage tui-tabs-far tui-tabs-far-panel tui-tabs tui-tabs-panel tui-tabs-other tui-tabs-new tui-tabs-back tui-tabs-closed tui-subagent-footer tui-subagent-panel tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

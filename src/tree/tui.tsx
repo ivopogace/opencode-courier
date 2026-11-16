@@ -945,10 +945,20 @@ export function addTreePanel(ctx: Context) {
     )
     return dispose
   })
-  const openPanel = () => {
+  const openPanel = async () => {
     const route = ctx.ui.router.current()
     const before = following
-    if (route.type === "session" && following?.at !== route.sessionID) following = { root: route.sessionID, at: route.sessionID, presentation: "panel", focused: true }
+    if (route.type === "session" && following?.at !== route.sessionID) {
+      const { sessionID } = route
+      const token = ++attempt
+      const own = await treeOf(sessionID)
+      const whole = own?.root ? await treeOf(own.root) : undefined
+      const now = ctx.ui.router.current()
+      if (token !== attempt || now.type !== "session" || now.sessionID !== sessionID) return
+      const inside = own?.root !== undefined && whole?.rows.some((row) => row.sessionID === sessionID) === true
+      const [root, tree] = inside ? [own!.root!, whole] : [sessionID, own]
+      following = { root, at: sessionID, presentation: "panel", focused: true, ...(tree ? { tree } : {}) }
+    }
     if (ctx.ui.panel.open(PANEL)) return
     following = before
     ctx.ui.toast.show({ title: "courier", message: "Open a session first", variant: "warning" })

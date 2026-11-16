@@ -1158,6 +1158,23 @@ describe("the tree panel following navigation", () => {
     }
   }, 20_000)
 
+  test("a session that starts its first child while its tree is read shows it once that read ends", async () => {
+    const fake = await opened({ ses_parent: pair(1) })
+    let spawned = false
+    fake.state.tree = async (sessionID) => {
+      const started = spawned
+      await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS * 1.5))
+      if (sessionID === "ses_parent") return pair(1)
+      return sessionID === "ses_lonely" && started ? { rows: [row("ses_new", { parentID: "ses_lonely" })] } : { rows: [] }
+    }
+    fake.state.route = { type: "session", sessionID: "ses_lonely" }
+    await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS * 1.6))
+    spawned = true
+    fake.emit("session.created")
+    await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS * 6))
+    expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_lonely" })
+  }, 20_000)
+
   test("a session the person opened it in shows it again when they come back, with or without a tree", async () => {
     for (const other of [{ rows: [] }, { rows: [row("ses_far", { parentID: "ses_y", title: "Far away" })] }]) {
       const fake = fakeContext(async () => empty)

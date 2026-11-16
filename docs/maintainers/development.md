@@ -87,7 +87,8 @@ picture costs 50 to 80 KB, which is why the zoom magnifies the spotlight alone, 
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request. The required check
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, and as the first
+job of `release.yml`. The required check
 is `Live test against OpenCode V2`: it waits for the four `e2e/run.sh` shards and `e2e/tui.sh`, and
 passes when they are skipped. A pull request that changes only Markdown, `docs/**` or `.claude/**`
 skips the live jobs; the unit job, with the docs' link check, still runs. SonarCloud fails on a new

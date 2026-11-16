@@ -30,7 +30,7 @@ the hub), `development.md` (commands, suites, CI), `real-model.md` and `releasin
   in groups named in its `SUITE`. `tui.sh`: the TUI in tmux. `real-model.sh`: a smoke test with a
   real model, not in CI.
 - `.github/workflows/ci.yml` runs the unit, live (four shards), TUI and SonarCloud jobs on every pull
-  request (the live and TUI jobs skip a docs-only one, SonarCloud a fork's); `latest.yml` runs the live suite on OpenCode's latest release and opens an issue for a
+  request (the live and TUI jobs skip a docs-only one, SonarCloud a fork's); `latest.yml` runs the live and TUI suites on OpenCode's latest release and opens an issue for a
   newer one.
 
 ## Commands

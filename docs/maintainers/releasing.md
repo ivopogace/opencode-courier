@@ -27,7 +27,8 @@ close and reopen it.
 - Start a release with `dry_run` shows the bump and pushes nothing.
 - `gh workflow run release-tag.yml --ref release-X.Y.Z` (dry run by default when run by hand) checks
   the version and tag, builds, and runs `npm stage publish --dry-run`.
-- `gh workflow run release.yml --ref vX.Y.Z -f dry_run=true` packs the package and stages nothing.
+- `gh workflow run release.yml --ref vX.Y.Z -f dry_run=true` runs the whole CI, then runs
+  `npm stage publish --dry-run` and drafts no release.
 
 ## When a step fails
 

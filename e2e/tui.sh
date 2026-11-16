@@ -523,6 +523,38 @@ submit "/courier memory"
 check "/courier memory shows the usage in a toast, and no memory view" \
   "$([ "$(shows "/courier tree opens the session tree" 30 tui-memory-usage)" = true ] && ! grep -qF "Memory (" "$WORK/tui-memory-usage.txt" && echo true || echo false)"
 
+echo "the tree panel follows a session tab into another tree, from that tree's root, and hides on the + tab's new session"
+check "the RPC's tree names the root of a child's tree" "$(rpc tree "{\"sessionID\":\"$second\"}" | jq -r --arg root "$asker_parent" '.output.root == $root')"
+check "and none for a root" "$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -r '.output | has("root") | not')"
+curl -sf -u "opencode:$OPENCODE_PASSWORD" -X PATCH -H 'content-type: application/json' --data '{"title":"FAR-CHILD"}' "$SERVER/api/session/$second" >/dev/null
+open_tui tui-tabs-far "$second"
+check "the other tree's child has its own tab" "$(shows "FAR-CHILD" 60 tui-tabs-far)"
+submit "/courier tree"
+check "/courier tree in that child opens its tree from the root, the child marked" "$(shows "FAR-CHILD (on screen)" 30 tui-tabs-far-panel)"
+check "with the root's header, which counts its older child left out" "$(grep -qF "1 older left out" "$WORK/tui-tabs-far-panel.txt" && echo true || echo false)"
+open_tui tui-tabs "$parent"
+check "the TUI is on the parent" "$(shows "courier 2 idle" 60 tui-tabs)"
+submit "/courier tree"
+check "the panel opens on the parent's tree" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-tabs-panel)"
+click_on() {
+  local line column
+  line=$(grep -nF -- "$1" "$WORK/$2.txt" | head -1 | cut -d: -f1 || true)
+  [ -n "$line" ] || return 0
+  column=$(grep -F -- "$1" "$WORK/$2.txt" | head -1 | sed "s/$1.*//" | LC_ALL=C.UTF-8 wc -m || true)
+  tmux send-keys -t "$TMUX_SESSION" -l "$(printf '\033[<0;%d;%dM' $((column + 1)) "$line")"
+  tmux send-keys -t "$TMUX_SESSION" -l "$(printf '\033[<0;%d;%dm' $((column + 1)) "$line")"
+}
+click_on "FAR-CHILD" tui-tabs-panel
+check "a click on the other tree's tab shows that tree from its root, the child marked" "$(shows "FAR-CHILD (on screen)" 30 tui-tabs-other)"
+check "with that tree's header, which counts its older child left out, and its asking child's row" \
+  "$(grep -qF "1 older left out" "$WORK/tui-tabs-other.txt" && grep -qF "└ ✓ CHILD-ASKS  idle · reported done" "$WORK/tui-tabs-other.txt" && echo true || echo false)"
+click_on "+" tui-tabs-other
+check "the + tab's new session hides the panel" "$(hides "courier tree" 10 tui-tabs-new)"
+click_on "FAR-CHILD" tui-tabs-new
+check "back on the other tree's tab, the panel shows it again" "$(shows "FAR-CHILD (on screen)" 30 tui-tabs-back)"
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes it there" "$(hides "courier tree" 10 tui-tabs-closed)"
+
 echo "the tree panel shows a subagent OpenCode's subagent tool started, under the session that started it, marked subagent (#438)"
 out=$(prompt "COURIER-SUBAGENT-START")
 sub_root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -569,7 +601,7 @@ open_tui tui-installed "$parent"
 check "the TUI loads the installed package's tui entrypoint and shows the entry" "$(shows "courier 2 idle" 60 tui-installed)"
 
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-usage tui-subagent-footer tui-subagent-panel tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-usage tui-tabs-far tui-tabs-far-panel tui-tabs tui-tabs-panel tui-tabs-other tui-tabs-new tui-tabs-back tui-tabs-closed tui-subagent-footer tui-subagent-panel tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

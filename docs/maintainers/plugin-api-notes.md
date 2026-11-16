@@ -662,6 +662,9 @@ is not. What the plugin does about it: [architecture.md](architecture.md#two-ser
   closes it when the route leaves that session (`app.tsx`). A new panel takes the keyboard. So the
   tree panel reopens itself after a route change, and hands the keyboard back with
   `keymap.dispatch("pane.focus.left")` when it did not have it.
+- **Session tabs are routes** (`context/session-tabs.tsx`): a tab opens `data.session.root` of its
+  session, OpenCode's own root, so a `courier_spawn` child, which has no `parentID`, gets a tab of
+  its own; the `+` tab routes to the home screen. The tree panel sees both as route changes.
 - **A panel splits from 108 columns, less the vertical tabs** (`canSplit`, `context/panel.tsx`). The
   plugin cannot read the tabs' width, so it notes the split only at a `renderer.width` of 108 or
   more.

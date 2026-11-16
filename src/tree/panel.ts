@@ -81,8 +81,19 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
   }
 }
 
+async function rootOf(ports: CourierPorts, sessionID: string) {
+  const seen = new Set<string>()
+  for (let at = sessionID; ; ) {
+    const top = (await childStore(ports.storage).lineage(at).catch(() => [])).at(-1)?.parentID ?? at
+    seen.add(at).add(top)
+    const above = (await ports.session.get({ sessionID: top }).catch(() => undefined))?.parentID
+    if (!above || seen.has(above)) return top
+    at = above
+  }
+}
+
 export async function panel(ports: CourierPorts, rootID: string): Promise<Tree> {
-  const [{ kept, leftOut }, root] = await Promise.all([readTree(ports, rootID), readTop(ports, rootID)])
+  const [{ kept, leftOut }, root, topID] = await Promise.all([readTree(ports, rootID), readTop(ports, rootID), rootOf(ports, rootID)])
   const stalled = await stalledAmong(ports, [rootID, ...kept.map((node) => node.entry.sessionID)])
   const windows = await ports.models().catch((): KnownModel[] => [])
   const [rows, top] = await Promise.all([
@@ -90,5 +101,5 @@ export async function panel(ports: CourierPorts, rootID: string): Promise<Tree> 
     root && row(ports, windows, root, stalled.get(rootID)),
   ])
   const own = stalled.get(rootID)
-  return { rows, ...(top ? { top } : {}), ...(leftOut ? { truncated: leftOut } : {}), ...(own !== undefined ? { stalled: own } : {}) }
+  return { rows, ...(top ? { top } : {}), ...(topID !== rootID ? { root: topID } : {}), ...(leftOut ? { truncated: leftOut } : {}), ...(own !== undefined ? { stalled: own } : {}) }
 }

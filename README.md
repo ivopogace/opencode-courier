@@ -133,7 +133,7 @@ behaviour: [the reference](docs/reference.md#the-tools).
 ## In the terminal
 
 - **Footer:** `courier 1 waiting on you · 2 running · 1 idle`.
-- **`/courier tree`:** a panel with the tree, the session it was opened in as its first row. `enter` opens a session, `s` stops it, `q` closes.
+- **`/courier tree`:** a panel with the tree, its root as the first row. `enter` opens a session, `s` stops it, `q` closes.
 - **`ctrl+x k`** or **`/asks`:** every ask waiting on you in the tree, answered in a dialog.
 
 More: [in the terminal](docs/reference.md#in-the-terminal).

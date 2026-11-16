@@ -46,6 +46,7 @@ const Row = Schema.Struct({
 const Tree = Schema.Struct({
   rows: Schema.Array(Row),
   top: Schema.optionalKey(Row),
+  root: Schema.optionalKey(Schema.String),
   truncated: Schema.optionalKey(Count),
   stalled: Schema.optionalKey(Schema.Number),
 })

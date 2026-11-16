@@ -28,5 +28,6 @@ _For a change to the terminal part (tree panel, asks inbox)._
 - [ ] The unit job's checks pass locally (`bun run typecheck`, `bun test`, `bun run build`, see CONTRIBUTING.md)
 - [ ] A behaviour change comes with unit tests and an `e2e/run.sh` scenario (or `e2e/tui.sh` for the terminal part)
 - [ ] README.md and `docs/reference.md` are updated where behaviour changed
+- [ ] Nothing added to `docs/reference.md` is rendering detail, internals or restated model-facing text
 - [ ] A change to a model-facing string (`src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts`, a tool description) updates `test/__snapshots__/`
 - [ ] No unrelated changes

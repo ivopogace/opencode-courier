@@ -25,7 +25,8 @@ the hub), `development.md` (commands, suites, CI), `real-model.md` and `releasin
   `tree/store.ts` is the only file that knows its storage keys.
 - `test/`: unit tests against a fake plugin context. `imports.test.ts` enforces the import rules;
   `notices.test.ts` snapshots every `text.ts`, the skill and the tools' descriptions and schemas
-  (`bun test --update-snapshots`); `links.test.ts` resolves every Markdown link.
+  (`bun test --update-snapshots`); `links.test.ts` resolves every Markdown link; `size.test.ts` holds
+  `docs/reference.md` and README.md to their budgets.
 - `e2e/run.sh`: the live suite against a real OpenCode server and `mock-model.mjs`, a scripted model,
   in groups named in its `SUITE`. `tui.sh`: the TUI in tmux. `real-model.sh`: a smoke test with a
   real model, not in CI.
@@ -61,6 +62,11 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - A behaviour change comes with unit tests and an e2e scenario, and updates `docs/reference.md`, where
   each behaviour is stated once. README.md stays at about 150 lines: the pitch, install, a short
   how-it-works, the options, the tools table and the demo.
+- `docs/reference.md` holds what a person or a model decides on: limits, tools and their parameters,
+  when a session is woken or told, what to allow up front, what each key or command does. Not how
+  the UI renders it, how the plugin implements it (that goes in `docs/maintainers/`), or wording that
+  restates a model-facing string (`test/notices.test.ts` pins those). `test/size.test.ts` holds it to
+  a word budget and README.md to a line budget; raise a budget only with a reason in the PR.
 - Docs state how things are now: no history, no "used to", "since #N" or "no longer"; that lives in
   git, PR bodies and release notes.
 - After changing a model-facing string (`src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or

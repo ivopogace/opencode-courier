@@ -9,7 +9,10 @@ open an issue first so we can agree on the shape before you write it.
 
 - [docs/reference.md](docs/reference.md) describes what the plugin does, each behaviour once; a
   change in behaviour updates it. [README.md](README.md) is the short version and changes only when
-  its pitch, install, options, tools or demo do.
+  its pitch, install, options, tools or demo do. The reference holds what a person or a model
+  decides on (limits, tools and their parameters, when a session is woken or told, what to allow up
+  front, what each key or command does), not how the UI renders it, how the plugin implements it,
+  or wording that restates a model-facing string. A unit test keeps both files within a size budget.
 - [docs/maintainers/development.md](docs/maintainers/development.md) has the commands, the live
   suites and CI.
 - [docs/maintainers/architecture.md](docs/maintainers/architecture.md) has the layout and the import

@@ -151,7 +151,7 @@ More: [in the terminal](docs/reference.md#in-the-terminal).
 - To steer a running tree, open a child from the `/courier tree` panel and type: courier passes
   what you write to the sessions above it, and a parent with the skill passes it to the parts it
   changes ([details](docs/reference.md#steering-a-running-tree)).
-- For a long-running child, schedule a `courier_later` check-in, in case the server stops.
+- Schedule a [`courier_later` check-in](docs/reference.md#check-ins) for a long-running child.
 
 ## Contributing
 

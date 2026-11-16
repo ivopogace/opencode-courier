@@ -8,7 +8,8 @@ source is on the `v2` branch of https://github.com/anomalyco/opencode, each rele
 where the plugin branches on an older host. How the modules fit together:
 [architecture.md](architecture.md).
 
-Each trap: **its name**, what the host does and what courier does about it, then `Where:`.
+Each trap: **its name**, what the host does and what courier does about it, then `Where:` when
+code handles it.
 
 ## Tools
 

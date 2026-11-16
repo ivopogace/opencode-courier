@@ -671,6 +671,16 @@ describe("the tree panel", () => {
     expect(other.captureCharFrame()).not.toContain("courier")
   })
 
+  test("without its own row, says above the tree that the panel's session is stalled", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async () => ({ ...pair(1), stalled: NOW - 125_000 })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+
+    await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
+    expect(app.captureCharFrame()).toMatch(/This session is stalled: a message waits in its inbox since 2m \d\ds, woken again in vain/)
+  })
+
   test("draws the panel's own session first, its stall on its row and no bar of its own, and opens it, but neither stops nor forgets it", async () => {
     const fake = fakeContext(async () => empty)
     const top: Row = { sessionID: "ses_parent", parentID: "", title: "Root", depth: 0, state: "stalled", stalled: NOW - 125_000, isolated: false, created: NOW - 300_000, waits: [] }
@@ -1139,6 +1149,79 @@ describe("the tree panel following navigation", () => {
     fake.state.route = { type: "session", sessionID: "ses_mid" }
     await settle()
     expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_mid" })
+  })
+
+  test("a tree that takes longer to read than the panel's settle shows, while its sessions keep working", async () => {
+    const fake = await opened({ ses_parent: pair(1), ses_other: { rows: [row("ses_far", { parentID: "ses_other", title: "Far away" })] } })
+    const quick = fake.state.tree
+    fake.state.tree = async (sessionID) => {
+      await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS * 1.5))
+      return quick(sessionID)
+    }
+    const working = setInterval(() => fake.emit("session.tool.called"), 200)
+    try {
+      fake.state.route = { type: "session", sessionID: "ses_other" }
+      await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS * 6))
+      expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_other" })
+    } finally {
+      clearInterval(working)
+    }
+  }, 20_000)
+
+  test("a session that starts its first child while its tree is read shows it once that read ends", async () => {
+    const fake = await opened({ ses_parent: pair(1) })
+    let spawned = false
+    fake.state.tree = async (sessionID) => {
+      const started = spawned
+      await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS * 1.5))
+      if (sessionID === "ses_parent") return pair(1)
+      return sessionID === "ses_lonely" && started ? { rows: [row("ses_new", { parentID: "ses_lonely" })] } : { rows: [] }
+    }
+    fake.state.route = { type: "session", sessionID: "ses_lonely" }
+    await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS * 1.6))
+    spawned = true
+    fake.emit("session.created")
+    await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS * 6))
+    expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_lonely" })
+  }, 20_000)
+
+  test("a session the person opened it in shows it again when they come back, with or without a tree", async () => {
+    for (const other of [{ rows: [] }, { rows: [row("ses_far", { parentID: "ses_y", title: "Far away" })] }]) {
+      const fake = fakeContext(async () => empty)
+      fake.state.tree = async (sessionID) => (sessionID === "ses_y" ? other : { rows: [] })
+      await tui.setup(fake.context)
+      fake.state.route = { type: "session", sessionID: "ses_x" }
+      await fake.command("courier.command")!.run("tree")
+      expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_x" })
+
+      fake.state.route = { type: "session", sessionID: "ses_y" }
+      await settle()
+      await fake.command("courier.command")!.run("")
+      expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_y" })
+
+      fake.state.route = { type: "session", sessionID: "ses_x" }
+      await settle()
+      expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_x" })
+
+      fake.state.route = { type: "session", sessionID: "ses_lonely" }
+      await settle()
+      expect(fake.context.ui.panel.current()).toBeUndefined()
+    }
+  })
+
+  test("closed with q in a session it was opened in, it stays hidden there when followed back", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async (sessionID) => (sessionID === "ses_y" ? { rows: [row("ses_far", { parentID: "ses_y", title: "Far away" })] } : { rows: [] })
+    await tui.setup(fake.context)
+    fake.state.route = { type: "session", sessionID: "ses_x" }
+    await fake.command("courier.command")!.run("tree")
+    fake.context.ui.panel.close()
+    fake.state.route = { type: "session", sessionID: "ses_y" }
+    await settle()
+    await fake.command("courier.command")!.run("tree")
+    fake.state.route = { type: "session", sessionID: "ses_x" }
+    await settle()
+    expect(fake.context.ui.panel.current()).toBeUndefined()
   })
 
   test("hidden in a session without a tree, shows once that session starts one", async () => {

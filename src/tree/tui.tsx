@@ -872,6 +872,9 @@ export function addTreePanel(ctx: Context) {
   const [changed, stopListening] = changes(ctx, PANEL_CHANGES, PANEL_SETTLE_MS)
   let following: Following | undefined
   let attempt = 0
+  let reading = 0
+  let missed = false
+  const asked = new Set<string>()
   const viewOf = (sessionID: string): View => {
     const here = following?.at === sessionID ? following : undefined
     const refocus = here?.refocus === true
@@ -903,6 +906,7 @@ export function addTreePanel(ctx: Context) {
     const under = (tree: Tree | undefined) => tree?.rows.some((row) => row.sessionID === sessionID) === true
     Object.assign(from, { at: undefined, to: sessionID })
     if (sessionID === from.root || under(from.tree)) return show(from, sessionID, from.root, from.tree)
+    reading = token
     void (async () => {
       const current = () => token === attempt && following === from
       const inside = await treeOf(from.root)
@@ -911,8 +915,20 @@ export function addTreePanel(ctx: Context) {
       const whole = own?.root ? await treeOf(own.root) : undefined
       if (!current()) return
       if (own?.root && under(whole)) show(from, sessionID, own.root, whole)
-      else if (own?.rows.length) show(from, sessionID, sessionID, own)
-    })()
+      else if (own && (own.rows.length || asked.has(sessionID))) show(from, sessionID, sessionID, own)
+    })().finally(() => {
+      if (reading !== token) return
+      reading = 0
+      if (!missed) return
+      missed = false
+      retry()
+    })
+  }
+  const retry = () => {
+    const route = ctx.ui.router.current()
+    if (!following || following.at || route.type !== "session" || following.to !== route.sessionID || ctx.ui.panel.current()) return
+    following.focused = false
+    follow(following, route.sessionID)
   }
   const hide = (from: Following) => {
     ++attempt
@@ -925,7 +941,10 @@ export function addTreePanel(ctx: Context) {
       const shown = ctx.ui.panel.current()
       untrack(() => {
         if (!following || (shown && shown.sessionID === sessionID) || (!following.at && following.to === sessionID)) return
-        if (!shown && sessionID && following.at === sessionID) following = undefined
+        if (!shown && sessionID && following.at === sessionID) {
+          asked.delete(sessionID)
+          following = undefined
+        }
         else if (!sessionID) hide(following)
         else follow(following, sessionID)
       })
@@ -933,13 +952,10 @@ export function addTreePanel(ctx: Context) {
     createEffect(
       on(
         changed,
-        () =>
-          untrack(() => {
-            const route = ctx.ui.router.current()
-            if (!following || following.at || route.type !== "session" || following.to !== route.sessionID || ctx.ui.panel.current()) return
-            following.focused = false
-            follow(following, route.sessionID)
-          }),
+        () => {
+          if (reading) missed = true
+          else untrack(retry)
+        },
         { defer: true },
       ),
     )
@@ -948,6 +964,7 @@ export function addTreePanel(ctx: Context) {
   const openPanel = async () => {
     const route = ctx.ui.router.current()
     const before = following
+    if (route.type === "session") asked.add(route.sessionID)
     if (route.type === "session" && following?.at !== route.sessionID) {
       const { sessionID } = route
       const token = ++attempt

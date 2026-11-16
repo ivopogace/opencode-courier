@@ -5,7 +5,7 @@ import { resolve } from "node:path"
 const root = resolve(import.meta.dir, "..")
 const read = (file: string) => readFileSync(resolve(root, file), "utf8")
 
-const REFERENCE_WORDS = 6000
+const REFERENCE_WORDS = 5400
 const README_LINES = 170
 
 describe("doc budgets", () => {

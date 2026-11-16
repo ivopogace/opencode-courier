@@ -7,7 +7,7 @@ import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
 
-type Session = { updated: number; idle?: number; archived?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
+type Session = { updated: number; idle?: number; archived?: number; outcome?: string; cost?: number; title?: string; parentID?: string; messages?: unknown[] }
 type Window = { providerID: string; id: string; context: number; variants?: string[] }
 
 function fakePorts(
@@ -38,8 +38,8 @@ function fakePorts(
     storage,
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
-        const { updated, idle, archived, outcome, cost = 0, title = `title ${sessionID}` } = known(sessionID)
-        return { id: sessionID, title, cost, ...(outcome ? { outcome } : {}), location: { directory: "/repo" }, time: { created: 1, updated, ...(idle !== undefined ? { idle } : {}), ...(archived !== undefined ? { archived } : {}) } }
+        const { updated, idle, archived, outcome, cost = 0, title = `title ${sessionID}`, parentID } = known(sessionID)
+        return { id: sessionID, title, cost, ...(parentID ? { parentID } : {}), ...(outcome ? { outcome } : {}), location: { directory: "/repo" }, time: { created: 1, updated, ...(idle !== undefined ? { idle } : {}), ...(archived !== undefined ? { archived } : {}) } }
       },
       context: async ({ sessionID }: { sessionID: string }) => known(sessionID).messages ?? [],
       interrupt: async (input: { sessionID: string }) => {
@@ -429,6 +429,26 @@ describe("panel", () => {
     const stopped = (id: string) => rows.find((row) => row.sessionID === id)!.stopped
     expect([stopped("ses_stopped"), stopped("ses_again"), stopped("ses_plain")]).toEqual([true, undefined, undefined])
     expect(rows.find((row) => row.sessionID === "ses_again")).not.toHaveProperty("stopped")
+  })
+
+  test("names the root of the tree the session is in, through courier_spawn and OpenCode's own children alike, and none at the root", async () => {
+    const { ports } = fakePorts({
+      ses_top: { updated: 5, idle: 5 },
+      ses_root: { updated: 5, idle: 5, parentID: "ses_top" },
+      ses_mid: { updated: 5, idle: 5 },
+      ses_leaf: { updated: 5, idle: 5 },
+      ses_sub: { updated: 5, idle: 5, parentID: "ses_leaf" },
+      ses_loop: { updated: 5, idle: 5, parentID: "ses_loop" },
+    })
+    await childStore(ports.storage).record(entry("ses_mid", "ses_root"))
+    await childStore(ports.storage).record(entry("ses_leaf", "ses_mid"))
+
+    expect(await panel(ports, "ses_top")).not.toHaveProperty("root")
+    expect((await panel(ports, "ses_leaf")).root).toBe("ses_top")
+    expect((await panel(ports, "ses_sub")).root).toBe("ses_top")
+    expect((await panel(ports, "ses_root")).root).toBe("ses_top")
+    expect(await panel(ports, "ses_loop")).not.toHaveProperty("root")
+    expect(await panel(ports, "ses_nowhere")).not.toHaveProperty("root")
   })
 
   test("is empty for a session that started none, and lists at most maxTotal sessions: the live ones first, then the newest, counting the rest", async () => {

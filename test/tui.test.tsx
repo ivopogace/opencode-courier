@@ -1108,6 +1108,39 @@ describe("the tree panel following navigation", () => {
     expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_parent" })
   })
 
+  test("in a session of another tree, shows that tree from its root, that session marked, and the first tree again back there", async () => {
+    const far = { rows: [row("ses_mid", { parentID: "ses_other", title: "Middle" }), row("ses_far", { parentID: "ses_mid", depth: 2, title: "Far away" })] }
+    const fake = await opened({ ses_parent: pair(1), ses_one: { rows: [], root: "ses_parent" }, ses_other: far, ses_mid: { rows: [far.rows[1]!], root: "ses_other" }, ses_far: { rows: [], root: "ses_other" } })
+
+    for (const sessionID of ["ses_far", "ses_mid"]) {
+      fake.state.route = { type: "session", sessionID }
+      await settle()
+      expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID })
+      const app = await renderPanel(fake.claim("session.panel"), panelInput(sessionID).value)
+      await app.waitForFrame((frame) => frame.includes(sessionID === "ses_far" ? "Far away (on screen)" : "Middle (on screen)"))
+      expect(app.captureCharFrame()).toContain(sessionID === "ses_far" ? "Middle" : "Far away")
+      expect(app.captureCharFrame()).not.toContain("CHILD-ASKS")
+    }
+
+    fake.state.route = { type: "session", sessionID: "ses_one" }
+    await settle()
+    expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_one" })
+    const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_one").value)
+    await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
+    expect(app.captureCharFrame()).not.toContain("Far away")
+    expect(fake.state.opened).toHaveLength(4)
+  })
+
+  test("in a session whose tree's root no longer lists it, shows its own tree, or hides", async () => {
+    const fake = await opened({ ses_parent: pair(1), ses_other: { rows: [] }, ses_mid: { rows: [row("ses_far", { parentID: "ses_mid", title: "Far away" })], root: "ses_other" }, ses_far: { rows: [], root: "ses_other" } })
+    fake.state.route = { type: "session", sessionID: "ses_far" }
+    await settle()
+    expect(fake.context.ui.panel.current()).toBeUndefined()
+    fake.state.route = { type: "session", sessionID: "ses_mid" }
+    await settle()
+    expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_mid" })
+  })
+
   test("hidden in a session without a tree, shows once that session starts one", async () => {
     const fake = await opened({ ses_parent: pair(1) })
     fake.state.route = { type: "session", sessionID: "ses_lonely" }

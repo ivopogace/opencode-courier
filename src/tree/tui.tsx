@@ -904,10 +904,13 @@ export function addTreePanel(ctx: Context) {
     Object.assign(from, { at: undefined, to: sessionID })
     if (sessionID === from.root || under(from.tree)) return show(from, sessionID, from.root, from.tree)
     void (async () => {
+      const current = () => token === attempt && following === from
       const inside = await treeOf(from.root)
-      const own = under(inside) ? undefined : await treeOf(sessionID)
-      if (token !== attempt || following !== from) return
-      if (under(inside)) show(from, sessionID, from.root, inside)
+      if (under(inside)) return current() && show(from, sessionID, from.root, inside)
+      const own = await treeOf(sessionID)
+      const whole = own?.root ? await treeOf(own.root) : undefined
+      if (!current()) return
+      if (own?.root && under(whole)) show(from, sessionID, own.root, whole)
       else if (own?.rows.length) show(from, sessionID, sessionID, own)
     })()
   }

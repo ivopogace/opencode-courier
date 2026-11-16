@@ -598,7 +598,9 @@ is idle.
 Keys: `↑`/`k` and `↓`/`j` move, `enter` or a click opens the session, `s` stops it, `x` forgets a
 `gone` one, `r` refreshes, `f` toggles fullscreen and `q` closes. `<leader>left` and
 `<leader>right` move the keyboard between the session and the panel. The panel follows you to other
-sessions and hides where there is no tree.
+sessions, a session tab or the session list alike: in a session of another tree it shows that tree
+from its root, the root found through `courier_spawn` and OpenCode's own children, with the
+session marked. It hides where there is no tree, and on the home screen of a new session.
 
 **Stopping.** `s` asks you to confirm, then stops the selected session as `courier_stop` would from
 the open session.

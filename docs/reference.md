@@ -389,10 +389,12 @@ deletes a session. Call it after the child has reported.
 ## Scheduled messages
 
 `courier_later` takes `delayMinutes` or `at`, an ISO 8601 time not in the past, and a `sessionID`
-(by default the caller), which may be any session. A message can arrive up to 15 seconds late,
-waits behind a running turn and survives a restart; a crash at the wrong moment can deliver it
-twice. One that cannot be delivered is logged and dropped. OpenCode loads plugins when a project is
-first used after a start, so messages that fell due meanwhile arrive then.
+(by default the caller), which may be any session. A message arrives within about a second of its
+time, waits behind a running turn and survives a restart; a crash at the wrong moment can deliver it
+twice. With [two servers](#two-servers-on-one-data-directory), one scheduled less than 15 seconds
+ahead on the server that does not deliver can be up to 15 seconds late. One that cannot be delivered
+is logged and dropped. OpenCode loads plugins when a project is first used after a start, so
+messages that fell due meanwhile arrive then.
 
 A spawned session cannot use OpenCode's automations (`automation_create` and the rest): a wake-up of
 theirs goes round the tree, so the child would read as having ended without a report.

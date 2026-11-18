@@ -125,6 +125,21 @@ turn to end, tells `Waits` nothing and cannot be cancelled by `courier_stop`. Th
 hook has no clock, so it cannot wake a session later. `e2e/run.sh`'s `schedules` group turns the
 flag on to cover `CHILD_RULES`.
 
+The hub's tick, every 15 seconds, delivers what is due, and is the only way for a message that fell
+due before the plugin loaded. On top of it `scheduling/timer.ts` keeps one timer per message due
+within two ticks (`NEAR_MS`), so a message arrives within about a second of its time:
+
+- `schedule` sets the timer of a message that is near, and each tick's scan of `later/` those of
+  the messages that have come near, another server's included. `cancel` and the delivery clear it.
+- A timer delivers nothing. It asks the hub for a tick at once (`tickNow`, behind a tick under way),
+  so the owner key and the claim set decide as at any tick: a server that is not the owner delivers
+  nothing, and a message it scheduled under a tick ahead waits for the owner's next tick.
+- A timer that fires before the clock reaches its message's time is set again by the tick it asked
+  for.
+- The timers live in memory, per loaded copy, and do not hold the process open. None runs longer
+  than `NEAR_MS`, so a far-away time never meets `setTimeout`'s limit, and the ones a copy leaves
+  behind when it unloads fire within that time, each asking for a tick like any other.
+
 ## Several copies in one process
 
 OpenCode runs one plugin instance per location, all in one process. After an update it loads the

@@ -234,7 +234,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:108 deleted:10 reminder:30 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:56 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:56 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {

@@ -17,7 +17,10 @@ export interface SpawnInput {
   readonly native?: boolean
 }
 
-const CHILD_RULES = [{ action: "opencode_schedule_*", resource: "*", effect: "deny" }] as const
+const CHILD_RULES = [
+  { action: "opencode_automation_*", resource: "*", effect: "deny" },
+  { action: "opencode_schedule_*", resource: "*", effect: "deny" },
+] as const
 
 function titleOf(task: string) {
   const line = task.trim().split("\n")[0] ?? ""

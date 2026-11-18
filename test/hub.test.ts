@@ -432,9 +432,13 @@ describe("the scheduler", () => {
   })
 
   test("asked to tick before any instance joined, does nothing", async () => {
-    const { timers } = fakeTimers()
+    const { timers, started } = fakeTimers()
+    const { hub: fresh } = open({}, jobs, timers)
 
-    await tickNow(open({}, jobs, timers).hub.scheduler)
+    await tickNow(fresh.scheduler)
+
+    expect(fresh.scheduler.running).toBeUndefined()
+    expect(started).toEqual([])
   })
 
   test("delivers a message due at once through the timer its scheduling sets, without waiting for the loop", async () => {

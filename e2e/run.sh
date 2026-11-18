@@ -234,7 +234,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:108 deleted:10 reminder:18 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:56 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:108 deleted:10 reminder:30 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:56 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -553,6 +553,27 @@ run_reminder() {
   check "once, with the reply it gave after the reminder" "$(notices_with "$parent" ended | jq -r --arg child "$child" 'length == 1 and (.[0] |
     contains("<courier from=\"" + $child + "\" ended=\"without-report\">") and contains("CHILD SILENT REPLY"))')"
   check "and the child still owes the report of its task" "$([ -z "$(kv get "report/$child/settled")" ] && echo true || echo false)"
+
+  scenario "a reminder whose inbox id was never noted is known by its metadata, and its delivery is not taken for a prompt"
+  turn_ended "$parent"
+  prompt_at=$(kv get "report/$child/prompt" | jq -r .at)
+  nudged=$(kv get "report/$child/nudged")
+  api_post "session/$child/synthetic" "$(jq -nc --arg text $'<courier from="courier" reminder="report">\nREMINDER-BY-METADATA\n</courier>' \
+    '{text: $text, description: "Reminded to report", metadata: {source: "courier", reminder: "report", resume: false}, delivery: "steer"}')" >/dev/null
+  check "it reached the child in a turn of its own" "$(has_text "$child" "REMINDER-BY-METADATA" 30)"
+  told=$(for _ in $(seq 1 60); do
+    [ "$(notices_with "$parent" ended | jq -r 'length')" = 2 ] && { echo true; exit; }
+    sleep 0.5
+  done; echo false)
+  check "the parent was told that turn ended without a report too" "$told"
+  turn_ended "$child"
+  check "its inbox id is not the noted one, and the prompt did not move" \
+    "$(api "session/$child/message" | jq -r --argjson nudged "$nudged" --argjson prompt "$(kv get "report/$child/prompt")" --argjson before "$prompt_at" '
+      [.data[] | select(.type == "synthetic" and (.text | contains("reminder=\"report\""))) | .id] as $ids |
+      ($ids | length == 2) and ($ids | index($nudged.inboxID)) != null and $prompt.at == $before')"
+  check "that turn ended without a second reminder from courier" \
+    "$([ "$(kv get "report/$child/nudged")" = "$nudged" ] && notices_with "$child" reminder | jq -r '[.[] | select(contains("REMINDER-BY-METADATA") | not)] | length == 1')"
+  turn_ended "$parent"
 }
 
 run_early_report() {

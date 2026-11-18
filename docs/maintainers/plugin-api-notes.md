@@ -1,10 +1,10 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.3.0` and OpenCode 2.3.0. Only two kinds are listed: traps no unit or e2e test
+`@opencode/plugin@2.3.2` and OpenCode 2.3.2. Only two kinds are listed: traps no unit or e2e test
 catches, and facts a pin bump must re-check. A trap a test fails on lives in that test. OpenCode's
 source is on the `v2` branch of https://github.com/anomalyco/opencode, each release tagged
-(`v2.3.0`); a host path is given where a pin bump must find the code again. A "since" stays only
+(`v2.3.2`); a host path is given where a pin bump must find the code again. A "since" stays only
 where the plugin branches on an older host. How the modules fit together:
 [architecture.md](architecture.md).
 
@@ -181,9 +181,10 @@ that ran the model would go idle. A pin bump re-checks its name, its shape (cour
 
 ## Feature flags
 
-- **Schedules and Console watches are flags**, off in a release build and turned on by
+- **Automations and Console watches are flags**, off in a release build and turned on by
   `experimental.<key>: true`, `experimental.all_flags` or `OPENCODE_FLAGS=all`
-  (`packages/schema/src/config/flag.ts`). A pin bump re-checks the list.
+  (`packages/schema/src/config/flag.ts`). `experimental.schedules` is read as `automations`. A pin
+  bump re-checks the list.
 
 ## Native `parentID`
 
@@ -270,14 +271,17 @@ writes: [architecture.md](architecture.md#instruction-entries).
   serves from the registry; the plugin API passes no extra files. Where: `src/skill.ts`.
 - **A person's own skills load after the server answers**, so a list read at once can lack them.
 
-## OpenCode's schedules
+## OpenCode's automations
 
-- **A schedule is invisible to the plugin**: no domain, no events, no HTTP address, so a child that
-  schedules a wake and ends its turn would read as ended without a report. Every spawned session gets
-  `CHILD_RULES`, `opencode_schedule_*` denied on `*`; as Code Mode tools in `execute`'s catalog only
+- **An automation is invisible to the plugin**: no domain, no events, so a child that sets one to
+  wake itself and ends its turn would read as ended without a report. Every spawned session gets
+  `CHILD_RULES`, `opencode_automation_*` denied on `*`; as Code Mode tools in `execute`'s catalog only
   a rule drops them (`Tool.snapshot`, `packages/core/src/tool.ts`), not the `context` hook. Hence
   `courier_later`'s own scheduler ([architecture.md](architecture.md#courier_laters-scheduler)).
   Where: `src/tree/spawn.ts`.
+- **A firing is a `user` item with `metadata.automation`**, sent to its own session, another of
+  the project or a child it creates (`packages/core/src/automation.ts`); the fan-up of typed text
+  skips it. Where: `typedText` in `src/tree/relay.ts`.
 
 ## `/goal`'s idle reviewer
 

@@ -1241,7 +1241,7 @@ describe("the fan-up of text typed into a spawned session", () => {
 
     test.each([
       ["courier's own prompt", item("msg_1", "words", { source: "courier", task: true })],
-      ["OpenCode's schedule", item("msg_1", "words", { schedule: "sch_1" })],
+      ["OpenCode's automation", item("msg_1", "words", { automation: { id: "aut_1" } })],
       ["whitespace", item("msg_1", " \n\t")],
       ["the brief's first line", item("msg_1", `${BRIEF_FIRST_LINE}ses_mid through opencode-courier.\n\nTask:\nx`)],
       ["the root's session", item("msg_1", "words", null, "ses_root")],

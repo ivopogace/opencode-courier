@@ -36,7 +36,7 @@ version in its `package.json`. Every release and its version:
 <!-- compat-table:end -->
 
 OpenCode never checks the version. The plugin loads on any host from 2.0.4 on, but its tools may
-break on another version. The terminal part is tested on OpenCode 2.3.0 only. On a version other
+break on another version. The terminal part is tested on OpenCode 2.3.2 only. On a version other
 than the pinned one, the plugin writes a warning to the server log when it loads
 (`opencode serve --print-logs` shows it).
 
@@ -266,8 +266,8 @@ A rejection always carries a message, so the child's call fails and the child ca
 
 A request answered elsewhere (in the child's session, the asks inbox, or by an `always` that covers
 it) is settled: the top session gets a short note that waits for its next turn and wakes nothing. A
-rejection in OpenCode rejects the session's other pending requests too; the note then says the child
-may have stopped and `courier_send` restarts it. Requests still waiting are in
+rejection in OpenCode rejects the other pending requests of the same step too; the note then says
+the child may have stopped and `courier_send` restarts it. Requests still waiting are in
 [`courier_tree`'s `pending`](#seeing-and-stopping-a-subtree).
 
 ## A child that shows a form
@@ -339,7 +339,7 @@ it changes.
 stay behind. Courier cannot tell who wrote a prompt, so it passes any prompt that arrives as text: what
 you type in the TUI or send with `opencode run --session` or the API, a slash command's whole
 template, the typed part of a prompt with a skill attached. The TUI's `!` shell commands, courier's
-own messages and OpenCode's schedules are not passed.
+own messages and OpenCode's automations are not passed.
 
 **When.** The text is passed only while the tree is at work: a session under the top is running or
 `blocked`, the session you typed into owes a report or has a courier message waiting, or the top
@@ -393,7 +393,7 @@ waits behind a running turn and survives a restart; a crash at the wrong moment 
 twice. One that cannot be delivered is logged and dropped. OpenCode loads plugins when a project is
 first used after a start, so messages that fell due meanwhile arrive then.
 
-A spawned session cannot use OpenCode's own schedules (`schedule_create` and the rest): a wake-up of
+A spawned session cannot use OpenCode's automations (`automation_create` and the rest): a wake-up of
 theirs goes round the tree, so the child would read as having ended without a report.
 `courier_later` is the way for a child to wait. A root session keeps them.
 

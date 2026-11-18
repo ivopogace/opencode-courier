@@ -12,7 +12,7 @@ Its results stay with the person who ran it: they go in no pull request, issue o
 
 ```bash
 bun install
-npm install --prefix <scratch>/oc @opencode/cli@2.3.0
+npm install --prefix <scratch>/oc @opencode/cli@2.3.2
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 

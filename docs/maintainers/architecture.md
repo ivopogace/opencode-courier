@@ -119,7 +119,7 @@ session's entries once per instance and session.
 ## `courier_later`'s scheduler
 
 `courier_later` keeps its own scheduler rather than OpenCode's
-[schedules](plugin-api-notes.md#opencodes-schedules): a plugin cannot reach them, they are a feature
+[automations](plugin-api-notes.md#opencodes-automations): a plugin cannot reach them, they are a feature
 flag off in release builds, and a firing carries no sender's envelope, does not wait for a running
 turn to end, tells `Waits` nothing and cannot be cancelled by `courier_stop`. The `experimental.idle`
 hook has no clock, so it cannot wake a session later. `e2e/run.sh`'s `schedules` group turns the

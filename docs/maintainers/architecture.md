@@ -55,7 +55,7 @@ race on gets keys of its own, one writer each. `test/store.test.ts` pins the tre
 | `report/<sessionID>/progress` | `{ at }`: when it last messaged its parent without a status. |
 | `report/<sessionID>/told` | `{ at }`: when its parent was last told of a silent end. |
 | `report/<sessionID>/stopped` | `{ at }`: when `courier_stop` stopped it. |
-| `report/<sessionID>/nudged` | `{ at, inboxID }`: when it was last reminded to report, and the reminder's inbox id, whose delivery is not noted as a prompt. One reminder while `nudged` is no earlier than `prompt`. |
+| `report/<sessionID>/nudged` | `{ at, inboxID }`: when it was last reminded to report, and the reminder's inbox id, by which its delivery is not noted as a prompt when its `enqueued` was missed. One reminder while `nudged` is no earlier than `prompt`. |
 | `later/<id>` | A pending `courier_later` message. |
 | `question/<requestID>` | A relayed question, until answered, at most 14 days (the 100 newest). |
 | `typed/<sessionID>/<inboxID>` | `{ at, text }`: a `user` item typed into a spawned session, from its enqueue until its fan-up is sent or skipped. |

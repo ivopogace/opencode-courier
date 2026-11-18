@@ -201,6 +201,32 @@ describe("nudgeSilent", () => {
     expect(sent.map((item: any) => item.sessionID)).toEqual(["ses_child", "ses_parent"])
   })
 
+  test("its delivery is not a prompt when its inbox id was never noted, as the call failed after admitting it", async () => {
+    const { ports, sent, store } = await prompted()
+    const admitted: any[] = []
+    const failing = {
+      ...ports,
+      session: {
+        ...ports.session,
+        synthetic: async (input: any) => {
+          admitted.push(input)
+          throw new Error("timed out")
+        },
+      },
+    } as WatchPorts
+    expect(await onIdle(failing, new Set(), outside, idle())).toBe(false)
+    expect(store.get(nudgedKey("ses_child"))).toEqual({ at: 1_000_000 })
+    const inbox = new Map<string, string>()
+    const { sessionID, text, description, metadata } = admitted[0]
+
+    await noteEnqueued(ports, inbox, { data: { sessionID, inboxID: "inb_r", item: { type: "synthetic", payload: { text, description, metadata } } } })
+    expect(await notePrompt(ports, delivered("evt_n", 1_000_100, "inb_r"), inbox)).toBe(false)
+    expect(store.get(promptKey("ses_child"))).toEqual({ at: 100 })
+    expect(await nudgeSilent(ports, new Set(), outside, idle())).toBe(false)
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 1_000_200), outside)).toEqual(["ses_parent"])
+    expect(sent.map((item: any) => item.sessionID)).toEqual(["ses_parent"])
+  })
+
   test("reminds again once a new prompt reaches the child", async () => {
     const { ports, sent } = await prompted()
     await nudgeSilent(ports, new Set(), outside, idle())

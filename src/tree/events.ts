@@ -68,7 +68,8 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
 }
 
 const TYPED = "typed"
-const UNOWED = new Set(["user", "compaction", "move", TYPED])
+const REMINDER = "reminder"
+const UNOWED = new Set(["user", "compaction", "move", TYPED, REMINDER])
 const OWN_SCHEDULED = "own-scheduled:"
 const MESSAGE_FROM = "from:"
 const HOST_REPORT = "host-report:"
@@ -78,6 +79,7 @@ function kindOf(sessionID: string, item: Enqueued["data"]["item"]) {
   if (item.type === "synthetic" && metadata?.source === "subagent" && typeof metadata.childID === "string") return `${HOST_REPORT}${metadata.childID}`
   if (item.type !== "synthetic" || metadata?.source !== "courier") return item.type
   if (metadata.route === "prompt") return TYPED
+  if (metadata.reminder === "report") return REMINDER
   const ownCheckIn = typeof metadata.scheduled === "string" && metadata.from === sessionID && typeof metadata.scheduledAt === "number"
   if (ownCheckIn) return `${OWN_SCHEDULED}${metadata.scheduledAt}`
   const statusless = typeof metadata.from === "string" && Object.keys(metadata).length === 2

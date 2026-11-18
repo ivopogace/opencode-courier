@@ -50,7 +50,8 @@ code handles it.
   `synthetic`, `compaction`, `move`) and a synthetic item's `payload.metadata`; `delivered` carries
   only `inboxID`, and the `synthetic` call's returned id may arrive after it. The runner's own
   compactions and its output-limit continuation skip the inbox. Courier keeps each item's kind until
-  delivery, and `notePrompt` tells its own messages apart by metadata. Where: `src/tree/events.ts`.
+  delivery, and `notePrompt` tells its own messages apart by metadata: the report reminder by
+  `reminder: "report"`, whether or not its id was noted. Where: `src/tree/events.ts`.
 - **A `user` item does not say where it came from**: the API, `opencode run`, `/init`, `/review`, a
   prompt with a skill attached and a `subagent` follow-up all arrive with `metadata: null`. The
   fan-up of typed text goes by item kind. Where: `src/tree/relay.ts`.
@@ -97,8 +98,11 @@ that ran the model would go idle. A pin bump re-checks its name, its shape (cour
 `sessionID` and each `background` item's `sessionID`) and its order.
 
 - **Admitted input keeps the execution going**, so a hook that always admits loops forever. The
-  reminder goes with `resume: false`, and the `nudged` note bounds it to one per prompt. Where:
-  `src/tree/nudge.ts`.
+  reminder goes with `resume: false`, and the `nudged` note bounds it to one per prompt. The hook is
+  awaited before delivery, but a `synthetic` call that fails after admitting the item, or a stop
+  before its id is noted, still delivers it; `notePrompt` skips it by its enqueued metadata, and by
+  the noted id for an instance that missed `enqueued`. Where: `src/tree/nudge.ts`,
+  `src/tree/events.ts`.
 - **It does not run** after an interruption, a failure or control-only work; those ends are told
   without a reminder. A throw fails the execution, so `onIdle` logs every failure. Where:
   `src/tree/nudge.ts`.

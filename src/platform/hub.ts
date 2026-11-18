@@ -298,6 +298,11 @@ export const hub: Hub = find(globalThis as Registry).hub
 
 export const openInProcess = (jobs: readonly TickJob[]) => open(globalThis as Registry, jobs)
 
+export async function tickNow(scheduler: Scheduler = hub.scheduler) {
+  await scheduler.running?.done
+  await scheduler.tick?.()
+}
+
 export function memberAt(location: object) {
   let found: Member | undefined
   for (const member of hub.members) if (member.location === location) found = member

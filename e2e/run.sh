@@ -234,7 +234,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:56 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -1353,7 +1353,28 @@ run_wake() {
   check "and the watch is over" "$(for _ in $(seq 1 10); do [ -z "$(kv get "wake/$parent/$inbox")" ] && { echo true; exit; }; sleep 1; done; echo false)"
 }
 
+late_ms() {
+  local parent id due arrived
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$1" | head -1)
+  id=$(tool_state courier_later <<<"$1" | jq -r '.metadata.metadata.id // empty')
+  due=$(node -p 'Date.parse(process.argv[1])' "$(tool_state courier_later <<<"$1" | jq -r '.metadata.metadata.fireAt // empty')")
+  for _ in $(seq 1 "${2:-30}"); do
+    arrived=$(api "session/$parent/message" | jq -r --arg id "$id" '[.data[] | select(.type == "synthetic" and .metadata.scheduled == $id) | .time.created | floor] | first // empty')
+    if [ -n "$arrived" ]; then echo $((arrived - due)); return; fi
+    sleep 1
+  done
+}
+on_time() { [ -n "$1" ] && [ "$1" -ge 0 ] && [ "$1" -le 2000 ] && echo true || echo false; }
+
 run_later() {
+  scenario "a scheduled message near as it is scheduled arrives within about a second of its time"
+  far=$(prompt "COURIER-LATER 0.55")
+  near=$(prompt "COURIER-LATER 0.05")
+  check "courier_later completed for one due in 33 seconds, checked below, and one due in 3" \
+    "$(jq -rs '[.[] | select(.status == "completed")] | length == 2' <<<"$(tool_state courier_later <<<"$far"; tool_state courier_later <<<"$near")")"
+  late=$(late_ms "$near")
+  check "the one due in 3 seconds arrived no earlier than its time and at most 2 seconds after (${late:-never arrived}${late:+ ms})" "$(on_time "$late")"
+
   scenario "courier_later wakes the idle parent, with the delay sent as a string as some models do"
   out=$(prompt "COURIER-LATER-STRING 0.05")
   turn_ended=$(now_ms)
@@ -1369,7 +1390,7 @@ run_later() {
   scheduled=$(tool_state courier_later <<<"$out" | jq -r '.metadata.metadata.id // empty')
   check "courier_cancel cancelled it" "$(tool_state courier_cancel <<<"$out" | jq -r '.status == "completed" and (.output | startswith("Cancelled"))')"
   witness=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$(prompt "COURIER-LATER 0.05")" | head -1)
-  check "an uncancelled message, scheduled next, was delivered at the tick" "$([ -n "$(reply_time "$witness" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  check "an uncancelled message, scheduled next, was delivered" "$([ -n "$(reply_time "$witness" "PARENT WOKE" 45)" ] && echo true || echo false)"
   check "the cancelled message never arrived" \
     "$([ -n "$scheduled" ] && [ -z "$(kv get "later/$scheduled")" ] && [ "$(notices_with "$parent" scheduled)" = '[]' ] &&
       api "session/$parent/inbox" | jq -e '.data | length == 0' >/dev/null && echo true || echo false)"
@@ -1382,6 +1403,11 @@ run_later() {
   check "the child's first turn, which ended waiting, was not told" "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 0' || echo false)"
   check "the child scheduled the message in its first turn" \
     "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_later")] | length == 1')"
+
+  scenario "a scheduled message more than two ticks away arrives within about a second of its time, once a tick finds it near"
+  late=$(late_ms "$far" 45)
+  check "the one due in 33 seconds, scheduled before the scenarios above, arrived no earlier than its time and at most 2 seconds after (${late:-never arrived}${late:+ ms})" \
+    "$(on_time "$late")"
 }
 
 run_schedules() {

@@ -1,10 +1,25 @@
 import { describe, expect, test } from "bun:test"
 import { envelope } from "../src/kernel/protocol.js"
-import { cancel, deliverDue, schedule, type LaterPorts } from "../src/scheduling/index.js"
+import { TICK_MS } from "../src/platform/hub.js"
+import { cancel, cancelScheduled, deliverDue, schedule, type LaterPorts } from "../src/scheduling/index.js"
+import { dueTimer, NEAR_MS } from "../src/scheduling/timer.js"
 
 const MINUTE = 60_000
 
-function fakePorts(options: { pageSize?: number; failDelivery?: boolean } = {}) {
+function fakeAlarm(wake: () => Promise<void> = async () => {}) {
+  const alarms: Array<{ run: () => void; ms: number; cleared: boolean }> = []
+  let wakes = 0
+  const timer = dueTimer({
+    set: (run, ms) => alarms[alarms.push({ run, ms, cleared: false }) - 1],
+    clear: (handle) => void ((handle as (typeof alarms)[number]).cleared = true),
+    wake: () => (wakes++, wake()),
+  })
+  const waiting = () => alarms.filter((alarm) => !alarm.cleared).map((alarm) => alarm.ms)
+  return { timer, alarms, waiting, wakes: () => wakes }
+}
+
+function fakePorts(options: { pageSize?: number; failDelivery?: boolean; wake?: () => Promise<void> } = {}) {
+  const alarm = fakeAlarm(options.wake)
   const store = new Map<string, unknown>()
   const delivered: any[] = []
   const logs: string[] = []
@@ -37,8 +52,9 @@ function fakePorts(options: { pageSize?: number; failDelivery?: boolean } = {}) 
     now: () => clock.now,
     newID: () => `later_${++ids}`,
     log: (message) => logs.push(message),
+    timer: alarm.timer,
   }
-  return { ports, store, delivered, logs, clock }
+  return { ports, store, delivered, logs, clock, ...alarm }
 }
 
 describe("schedule", () => {
@@ -221,5 +237,147 @@ describe("deliverDue", () => {
 
     expect(store.size).toBe(0)
     expect(logs).toEqual(["courier_later later_1 to ses_parent not delivered: Error: session gone"])
+  })
+})
+
+describe("the timer of a message that is near", () => {
+  test("is set for the message's time as it is scheduled, and asks for a tick when it fires", async () => {
+    const { ports, alarms, wakes } = fakePorts()
+
+    await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0.05 })
+
+    expect(alarms.map((alarm) => alarm.ms)).toEqual([3_000])
+    expect(wakes()).toBe(0)
+    alarms[0]!.run()
+    expect(wakes()).toBe(1)
+  })
+
+  test("fires at once for a message due as it is scheduled", async () => {
+    const { ports, waiting } = fakePorts()
+
+    await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0 })
+
+    expect(waiting()).toEqual([0])
+  })
+
+  test("covers two ticks, so one tick that does not come leaves no gap", () => {
+    expect(NEAR_MS).toBe(2 * TICK_MS)
+  })
+
+  test("is not set for a message further away, until a tick finds it near, and then only once", async () => {
+    const { ports, delivered, waiting, clock } = fakePorts()
+    await schedule(ports, "ses_parent", { message: "m", at: new Date(clock.now + NEAR_MS + 1_000).toISOString() })
+    expect(waiting()).toEqual([])
+
+    await deliverDue(ports, new Set())
+    expect(waiting()).toEqual([])
+
+    clock.now += TICK_MS
+    await deliverDue(ports, new Set())
+    await deliverDue(ports, new Set())
+
+    expect(waiting()).toEqual([NEAR_MS + 1_000 - TICK_MS])
+    expect(delivered).toEqual([])
+  })
+
+  test("is set by a tick for a message another server scheduled", async () => {
+    const { ports, store, waiting, clock } = fakePorts()
+    store.set("later/later_other", { id: "later_other", sessionID: "ses_parent", from: "ses_parent", message: "m", fireAt: clock.now + 5_000, createdAt: clock.now })
+
+    await deliverDue(ports, new Set())
+
+    expect(waiting()).toEqual([5_000])
+  })
+
+  test("is cleared by courier_cancel, and by one that finds the message gone", async () => {
+    const { ports, store, alarms, waiting } = fakePorts()
+    const first = await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0.05 })
+    const second = await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0.1 })
+    store.delete(`later/${second.id}`)
+
+    expect(await cancel(ports, first.id)).toBe(true)
+    expect(await cancel(ports, second.id)).toBe(false)
+
+    expect(alarms.map((alarm) => alarm.cleared)).toEqual([true, true])
+    expect(waiting()).toEqual([])
+  })
+
+  test("is cleared for every message of a stopped session, and left for another session's", async () => {
+    const { ports, waiting } = fakePorts()
+    await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0.05, sessionID: "ses_child" })
+    await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0.1, sessionID: "ses_child" })
+    await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0.2 })
+
+    await cancelScheduled(ports, "ses_child")
+
+    expect(waiting()).toEqual([12_000])
+  })
+
+  test("is cleared when a tick delivers the message first", async () => {
+    const { ports, delivered, waiting, clock } = fakePorts()
+    await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0.05 })
+    clock.now += 3_000
+
+    await deliverDue(ports, new Set())
+
+    expect(delivered).toHaveLength(1)
+    expect(waiting()).toEqual([])
+  })
+
+  test("is cleared when a tick finds the message already delivered by another copy", async () => {
+    const { ports, store, delivered, alarms, waiting, clock } = fakePorts()
+    const entry = await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0.05 })
+    clock.now += 3_000
+    const scanned = await ports.storage.scan({ prefix: "later/" })
+    store.delete(`later/${entry.id}`)
+
+    await deliverDue({ ...ports, storage: { ...ports.storage, scan: async () => scanned } }, new Set())
+
+    expect(delivered).toEqual([])
+    expect(alarms.map((alarm) => alarm.cleared)).toEqual([true])
+    expect(waiting()).toEqual([])
+  })
+
+  test("that fires before the clock reaches the message's time is set again by the tick it asked for", async () => {
+    const { ports, delivered, alarms, clock } = fakePorts()
+    await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0.05 })
+    clock.now += 2_999
+
+    alarms[0]!.run()
+    await deliverDue(ports, new Set())
+    expect(delivered).toEqual([])
+    expect(alarms.map((alarm) => alarm.ms)).toEqual([3_000, 1])
+
+    clock.now += 1
+    alarms[1]!.run()
+    await deliverDue(ports, new Set())
+    expect(delivered).toHaveLength(1)
+    expect(alarms).toHaveLength(2)
+  })
+
+  test("logs a tick it could not ask for, and the message waits for the next one", async () => {
+    const { ports, store, logs, alarms } = fakePorts({ wake: () => Promise.reject(new Error("no hub")) })
+    await schedule(ports, "ses_parent", { message: "m", delayMinutes: 0.05 })
+
+    alarms[0]!.run()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(logs).toEqual(["courier_later timer: later_1 waits for the next tick: Error: no hub"])
+    expect([...store.keys()]).toEqual(["later/later_1"])
+  })
+
+  test("is the copy's own when the ports bring none", async () => {
+    const { ports, store, delivered, clock } = fakePorts()
+    const { timer: _, ...plain } = ports
+
+    const entry = await schedule(plain, "ses_parent", { message: "m", delayMinutes: 0.4 })
+    expect(await cancel(plain, entry.id)).toBe(true)
+    await schedule(plain, "ses_parent", { message: "m", delayMinutes: 0.4 })
+    clock.now += MINUTE
+    await deliverDue(plain, new Set())
+
+    expect(delivered).toHaveLength(1)
+    expect(store.size).toBe(0)
   })
 })

@@ -275,15 +275,13 @@ writes: [architecture.md](architecture.md#instruction-entries).
 
 - **An automation is invisible to the plugin**: no domain, no events, so a child that sets one to
   wake itself and ends its turn would read as ended without a report. Every spawned session gets
-  `CHILD_RULES`, `opencode_automation_*` denied on `*`, and `opencode_schedule_*`, the tools' name
-  on a host before 2.3.1; as Code Mode tools in `execute`'s catalog only
+  `CHILD_RULES`, `opencode_automation_*` denied on `*`; as Code Mode tools in `execute`'s catalog only
   a rule drops them (`Tool.snapshot`, `packages/core/src/tool.ts`), not the `context` hook. Hence
   `courier_later`'s own scheduler ([architecture.md](architecture.md#courier_laters-scheduler)).
   Where: `src/tree/spawn.ts`.
-- **A firing is a `user` item with `metadata.automation`** (`metadata.schedule` on a host before
-  2.3.1), sent to its own session, another of the project or a child it creates
-  (`packages/core/src/automation.ts`); the fan-up of typed text skips both. Where:
-  `typedText` in `src/tree/relay.ts`.
+- **A firing is a `user` item with `metadata.automation`**, sent to its own session, another of
+  the project or a child it creates (`packages/core/src/automation.ts`); the fan-up of typed text
+  skips it. Where: `typedText` in `src/tree/relay.ts`.
 
 ## `/goal`'s idle reviewer
 

@@ -1376,7 +1376,7 @@ run_schedules() {
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
   check "the child's session carries the courier's rule denying them" \
-    "$(session_info "$child" | jq -r '.permissions == [{ "action": "opencode_automation_*", "resource": "*", "effect": "deny" }, { "action": "opencode_schedule_*", "resource": "*", "effect": "deny" }]')"
+    "$(session_info "$child" | jq -r '.permissions == [{ "action": "opencode_automation_*", "resource": "*", "effect": "deny" }]')"
   check "the root was offered them" \
     "$(jq -sr --arg parent "$parent" --arg child "$child" '
       ([.[] | select(.session == $child) | .opencodeTools] | max) as $below
@@ -2170,7 +2170,7 @@ run_spawn_native() {
   mixed_native=$(for id in $members; do [ "$(session_info "$id" | jq -r '.parentID')" = "$parent" ] && echo "$id"; done | head -1)
   mixed_plain=$(grep -vxF "${mixed_native:-none}" <<<"$members" | head -1)
   check "one has the parent as its OpenCode parentID, with the courier's ruleset, not the parent's, and the other has none" \
-    "$([ -n "$mixed_native" ] && [ -n "$mixed_plain" ] && [ "$(session_info "$mixed_native" | jq -r '.permissions == [{ "action": "opencode_automation_*", "resource": "*", "effect": "deny" }, { "action": "opencode_schedule_*", "resource": "*", "effect": "deny" }]')" = true ] &&
+    "$([ -n "$mixed_native" ] && [ -n "$mixed_plain" ] && [ "$(session_info "$mixed_native" | jq -r '.permissions == [{ "action": "opencode_automation_*", "resource": "*", "effect": "deny" }]')" = true ] &&
       [ "$(session_info "$mixed_plain" | jq -r '.parentID == null')" = true ] && echo true || echo false)"
   check "OpenCode lists only the subagent under the parent" \
     "$(api "session?parentID=$parent" | jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '[.data[].id] | index($native) != null and index($plain) == null')"
@@ -2236,7 +2236,7 @@ run_native() {
   info=$(session_info "$native_child")
   check "the child's OpenCode parentID is its parent, and courier's metadata is kept" \
     "$(jq -r --arg parent "$native_parent" '.parentID == $parent and .metadata.courier.parentID == $parent' <<<"$info")"
-  check "it has the courier's ruleset of its own" "$(jq -r '.permissions == [{ "action": "opencode_automation_*", "resource": "*", "effect": "deny" }, { "action": "opencode_schedule_*", "resource": "*", "effect": "deny" }]' <<<"$info")"
+  check "it has the courier's ruleset of its own" "$(jq -r '.permissions == [{ "action": "opencode_automation_*", "resource": "*", "effect": "deny" }]' <<<"$info")"
   check "OpenCode lists it under its parent" \
     "$(api "session?parentID=$native_parent" | jq -r --arg child "$native_child" '[.data[].id] | index($child) != null')"
   check "the roster records it as native" "$(kv get "roster/$native_parent/$native_child" | jq -r '.native == true and .isolated == false')"
@@ -2260,7 +2260,7 @@ run_native() {
   api_prompt "$parent" "COURIER-ASK native"
   child=$(spawned_by "$parent" 45)
   check "the child, created with the courier's ruleset, does not" \
-    "$(session_info "$child" | jq -r --arg parent "$parent" '.parentID == $parent and .permissions == [{ "action": "opencode_automation_*", "resource": "*", "effect": "deny" }, { "action": "opencode_schedule_*", "resource": "*", "effect": "deny" }]')"
+    "$(session_info "$child" | jq -r --arg parent "$parent" '.parentID == $parent and .permissions == [{ "action": "opencode_automation_*", "resource": "*", "effect": "deny" }]')"
   check "so it asks, and the parent is told once, that OpenCode shows the request to the person" \
     "$(has_text "$parent" "PARENT TOLD NATIVE PERMISSION" 45 >/dev/null; notices_with "$parent" asks | jq -r 'length == 1 and (.[0] | contains("shown=\"native\"") and contains("Do not ask them yourself"))')"
   check "and asks the person nothing itself" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"

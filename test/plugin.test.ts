@@ -439,7 +439,7 @@ test("courier_spawn with native: true gives a child OpenCode's parentID, and ref
   const { tools, calls } = await setUp()
 
   const result = await tools.get("courier_spawn").execute({ task: "t", native: true }, { sessionID: "ses_parent" })
-  expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ parentID: "ses_parent", permissions: [{ action: "opencode_automation_*", resource: "*", effect: "deny" }, { action: "opencode_schedule_*", resource: "*", effect: "deny" }] })
+  expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ parentID: "ses_parent", permissions: [{ action: "opencode_automation_*", resource: "*", effect: "deny" }] })
   expect(result.metadata).toMatchObject({ native: true })
 
   await expect(tools.get("courier_spawn").execute({ task: "t", native: true, isolate: true }, { sessionID: "ses_parent" })).rejects.toThrow(

@@ -652,7 +652,7 @@ createServer((request, response) => {
     const lessonsEntry = /(<|&lt;)context key="lessons"(>|&gt;)\n\s*opencode-courier lessons:/.test(everything)
     const standingEntry = /(<|&lt;)context key="standing"(>|&gt;)\n\s*opencode-courier standing:/.test(everything)
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
-    const automations = /opencode[._](automation|schedule)_/.test(JSON.stringify(body.tools ?? []) + everything)
+    const automations = /opencode[._]automation_/.test(JSON.stringify(body.tools ?? []) + everything)
     const opencodeTools = Math.max(-1, ...[...everything.matchAll(/^- opencode \((\d+) tools?/gm)].map((match) => Number(match[1])))
     const options = Object.fromEntries(Object.entries(body).filter(([key]) => !["messages", "tools", "stream", "stream_options", "tool_choice"].includes(key)))
     if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, updateRole, systemHash, hostReports, hostMessage, lessonsEntry, standingEntry, skills, automations, opencodeTools, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)

@@ -15,7 +15,7 @@ function typedText(item: Enqueued["data"]["item"]) {
   if (item.type !== "user") return undefined
   const { text, metadata } = item.payload ?? {}
   if (typeof text !== "string" || !text.trim() || text.startsWith(BRIEF_FIRST_LINE)) return undefined
-  return metadata?.source === "courier" || (metadata && ("automation" in metadata || "schedule" in metadata)) ? undefined : text
+  return metadata?.source === "courier" || (metadata && "automation" in metadata) ? undefined : text
 }
 
 export async function noteTyped(ports: Pick<WatchPorts, "storage" | "now">, event: Enqueued) {

@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 import { envelope } from "../kernel/protocol.js"
 import { scanAll, type Storage } from "../platform/storage.js"
+import { ownTimer, type DueTimer } from "./timer.js"
 
 type Context = Plugin.Context
 
@@ -23,7 +24,10 @@ export interface LaterPorts {
   readonly now: () => number
   readonly newID: () => string
   readonly log: (message: string) => void
+  readonly timer?: DueTimer
 }
+
+const timerOf = (ports: Pick<LaterPorts, "timer">) => ports.timer ?? ownTimer
 
 export interface LaterInput {
   readonly message: string
@@ -66,13 +70,15 @@ export async function schedule(ports: LaterPorts, from: string, input: LaterInpu
     createdAt: now,
   }
   await ports.storage.set(PREFIX + entry.id, { ...entry })
+  timerOf(ports).arm(entry, ports)
   return entry
 }
 
 export async function cancel(ports: LaterPorts, id: string) {
-  if ((await ports.storage.get(PREFIX + id)) === undefined) return false
-  await ports.storage.remove(PREFIX + id)
-  return true
+  const found = (await ports.storage.get(PREFIX + id)) !== undefined
+  if (found) await ports.storage.remove(PREFIX + id)
+  timerOf(ports).disarm(id)
+  return found
 }
 
 function pending(ports: Pick<LaterPorts, "storage">) {
@@ -95,7 +101,10 @@ export async function isScheduled(ports: { readonly storage: Pick<Storage, "scan
 
 export async function deliverDue(ports: LaterPorts, claimed: Set<string>) {
   const now = ports.now()
-  for (const due of (await pending(ports)).filter((entry) => entry.fireAt <= now)) {
+  const timer = timerOf(ports)
+  const entries = await pending(ports)
+  for (const entry of entries) if (entry.fireAt > now) timer.arm(entry, ports)
+  for (const due of entries.filter((entry) => entry.fireAt <= now)) {
     if (claimed.has(due.id)) continue
     claimed.add(due.id)
     try {
@@ -112,6 +121,7 @@ export async function deliverDue(ports: LaterPorts, claimed: Set<string>) {
       await ports.storage.remove(PREFIX + due.id)
     } finally {
       claimed.delete(due.id)
+      timer.disarm(due.id)
     }
   }
 }

@@ -16,6 +16,7 @@ import {
   openInProcess,
   permissions,
   sharedState,
+  tickNow,
   TICK_MS,
   type Member,
   type TickJob,
@@ -24,7 +25,7 @@ import {
 import type { QuestionPorts } from "../src/person/question/index.js"
 import { portsAt, questionState, shared as relayState } from "../src/person/question/shared.js"
 import { resetHub } from "./fixtures/reset.js"
-import { deliverDue, type LaterEntry, type LaterPorts } from "../src/scheduling/index.js"
+import { deliverDue, schedule, type LaterEntry, type LaterPorts } from "../src/scheduling/index.js"
 
 const jobs: TickJob[] = [(owner, claimed) => deliverDue(owner.later as LaterPorts, claimed)]
 
@@ -388,6 +389,69 @@ describe("the scheduler", () => {
     leave()
   })
 
+  test("ticks between two of the loop's when asked to, as the timer of a scheduled message does", async () => {
+    const { timers } = fakeTimers()
+    const { hub: fresh, join: joinHub } = open({}, jobs, timers)
+    const store = new Map<string, unknown>()
+    const delivered: string[] = []
+    const leave = joinHub(member("/a", () => {}, laterPorts("/a", store, delivered)))
+    await settle()
+
+    store.set("later/later_1", due("later_1"))
+    await tickNow(fresh.scheduler)
+
+    expect(delivered).toEqual(["/a later_1"])
+    leave()
+  })
+
+  test("asked to tick while one is under way, waits for it and ticks again, so what fell due meanwhile is not left to the loop", async () => {
+    const { timers } = fakeTimers()
+    const { hub: fresh, join: joinHub } = open({}, jobs, timers)
+    let scans = 0
+    let release = () => {}
+    const later = laterPorts("/a")
+    const slow: LaterPorts = {
+      ...later,
+      storage: { ...later.storage, scan: () => (scans++, new Promise((resolve) => (release = () => resolve({ entries: [] } as never)))) },
+    }
+    const leave = joinHub(member("/a", () => {}, slow))
+    await settle()
+    expect(scans).toBe(1)
+
+    const first = tickNow(fresh.scheduler)
+    const second = tickNow(fresh.scheduler)
+    await settle()
+    expect(scans).toBe(1)
+    release()
+    await settle()
+    expect(scans).toBe(2)
+    release()
+    await Promise.all([first, second])
+    expect(scans).toBe(2)
+    leave()
+  })
+
+  test("asked to tick before any instance joined, does nothing", async () => {
+    const { timers } = fakeTimers()
+
+    await tickNow(open({}, jobs, timers).hub.scheduler)
+  })
+
+  test("delivers a message due at once through the timer its scheduling sets, without waiting for the loop", async () => {
+    const store = new Map<string, unknown>()
+    const delivered: string[] = []
+    const later = { ...laterPorts("/a", store, delivered, Date.now), newID: () => "later_timed" }
+    const leave = join(member("/a", () => {}, later))
+    await hub.scheduler.running?.done
+    expect(delivered).toEqual([])
+
+    await schedule(later, "ses_parent", { message: "m", delayMinutes: 0 })
+    for (let waited = 0; waited < 100 && delivered.length === 0; waited++) await Bun.sleep(10)
+
+    expect(delivered).toEqual(["/a later_timed"])
+    await leave()
+  })
+
   test("waits on a tick through an instance that has left for a minute from its start, then ticks without it", async () => {
     const { timers, fire } = fakeTimers()
     const { join: joinHub } = open({}, jobs, timers)
@@ -553,6 +617,23 @@ describe("the owner key", () => {
     expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: now })
     expect(waits).toHaveLength(1)
     expect(delivered).toEqual(["/a later_1"])
+    leave()
+  })
+
+  test("held fresh by another server keeps a tick this one's timer asked for from delivering", async () => {
+    const { timers, waits } = fakeTimers()
+    const { hub: fresh, join: joinHub } = open({}, jobs, timers, "server_a")
+    const store = new Map<string, unknown>([[OWNER_KEY, { server: "server_b", at: 1_000 }]])
+    const delivered: string[] = []
+    const leave = joinHub(member("/a", () => {}, laterPorts("/a", store, delivered)))
+    await settle()
+
+    store.set("later/later_1", due("later_1"))
+    await tickNow(fresh.scheduler)
+
+    expect(delivered).toEqual([])
+    expect(waits).toEqual([])
+    expect(store.get(OWNER_KEY)).toEqual({ server: "server_b", at: 1_000 })
     leave()
   })
 

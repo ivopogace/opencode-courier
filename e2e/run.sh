@@ -1332,7 +1332,28 @@ run_wake() {
   check "and the watch is over" "$(for _ in $(seq 1 10); do [ -z "$(kv get "wake/$parent/$inbox")" ] && { echo true; exit; }; sleep 1; done; echo false)"
 }
 
+late_ms() {
+  local parent id due arrived
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$1" | head -1)
+  id=$(tool_state courier_later <<<"$1" | jq -r '.metadata.metadata.id // empty')
+  due=$(node -p 'Date.parse(process.argv[1])' "$(tool_state courier_later <<<"$1" | jq -r '.metadata.metadata.fireAt // empty')")
+  for _ in $(seq 1 "${2:-30}"); do
+    arrived=$(api "session/$parent/message" | jq -r --arg id "$id" '[.data[] | select(.type == "synthetic" and .metadata.scheduled == $id) | .time.created | floor] | first // empty')
+    if [ -n "$arrived" ]; then echo $((arrived - due)); return; fi
+    sleep 1
+  done
+}
+on_time() { [ -n "$1" ] && [ "$1" -ge 0 ] && [ "$1" -le 2000 ] && echo true || echo false; }
+
 run_later() {
+  scenario "a scheduled message near as it is scheduled arrives within about a second of its time"
+  far=$(prompt "COURIER-LATER 0.55")
+  near=$(prompt "COURIER-LATER 0.05")
+  check "courier_later completed for one due in 33 seconds, checked below, and one due in 3" \
+    "$(jq -rs '[.[] | select(.status == "completed")] | length == 2' <<<"$(tool_state courier_later <<<"$far"; tool_state courier_later <<<"$near")")"
+  late=$(late_ms "$near")
+  check "the one due in 3 seconds arrived no earlier than its time and at most 2 seconds after (${late:-never arrived}${late:+ ms})" "$(on_time "$late")"
+
   scenario "courier_later wakes the idle parent, with the delay sent as a string as some models do"
   out=$(prompt "COURIER-LATER-STRING 0.05")
   turn_ended=$(now_ms)
@@ -1348,7 +1369,7 @@ run_later() {
   scheduled=$(tool_state courier_later <<<"$out" | jq -r '.metadata.metadata.id // empty')
   check "courier_cancel cancelled it" "$(tool_state courier_cancel <<<"$out" | jq -r '.status == "completed" and (.output | startswith("Cancelled"))')"
   witness=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$(prompt "COURIER-LATER 0.05")" | head -1)
-  check "an uncancelled message, scheduled next, was delivered at the tick" "$([ -n "$(reply_time "$witness" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  check "an uncancelled message, scheduled next, was delivered" "$([ -n "$(reply_time "$witness" "PARENT WOKE" 45)" ] && echo true || echo false)"
   check "the cancelled message never arrived" \
     "$([ -n "$scheduled" ] && [ -z "$(kv get "later/$scheduled")" ] && [ "$(notices_with "$parent" scheduled)" = '[]' ] &&
       api "session/$parent/inbox" | jq -e '.data | length == 0' >/dev/null && echo true || echo false)"
@@ -1361,6 +1382,11 @@ run_later() {
   check "the child's first turn, which ended waiting, was not told" "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 0' || echo false)"
   check "the child scheduled the message in its first turn" \
     "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_later")] | length == 1')"
+
+  scenario "a scheduled message more than two ticks away arrives within about a second of its time, once a tick finds it near"
+  late=$(late_ms "$far" 45)
+  check "the one due in 33 seconds, scheduled before the scenarios above, arrived no earlier than its time and at most 2 seconds after (${late:-never arrived}${late:+ ms})" \
+    "$(on_time "$late")"
 }
 
 run_schedules() {

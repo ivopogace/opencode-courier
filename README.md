@@ -1,8 +1,6 @@
 # opencode-courier
 
-**Your OpenCode session hands work to other sessions, ends its turn, and is woken when they
-report.** Multi-session orchestration for OpenCode V2: spawn child sessions, be woken by them. No
-polling.
+Start multiple OpenCode V2 sessions from one and coordinate them in parallel.
 
 [![CI](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml/badge.svg)](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ivopogace_opencode-courier&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ivopogace_opencode-courier)

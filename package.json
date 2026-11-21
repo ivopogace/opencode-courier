@@ -1,7 +1,7 @@
 {
   "name": "opencode-courier",
   "version": "0.18.4",
-  "description": "Multi-session orchestration for OpenCode V2: spawn child sessions, be woken by them. No polling.",
+  "description": "Session trees for OpenCode V2: child sessions message their parent mid-run, report with a status, and work in their own worktrees.",
   "license": "MIT",
   "author": "Ivo Pogace <71701666+ivopogace@users.noreply.github.com>",
   "homepage": "https://github.com/ivopogace/opencode-courier#readme",

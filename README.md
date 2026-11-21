@@ -1,6 +1,6 @@
 # opencode-courier
 
-Spawn OpenCode V2 sessions that talk back while they work.
+Run several issues in parallel from one OpenCode V2 session.
 
 [![CI](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml/badge.svg)](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ivopogace_opencode-courier&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ivopogace_opencode-courier)

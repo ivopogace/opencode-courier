@@ -1,7 +1,7 @@
 {
   "name": "opencode-courier",
   "version": "0.18.4",
-  "description": "Spawn OpenCode V2 sessions that talk back while they work.",
+  "description": "Run several issues in parallel from one OpenCode V2 session.",
   "license": "MIT",
   "author": "Ivo Pogace <71701666+ivopogace@users.noreply.github.com>",
   "homepage": "https://github.com/ivopogace/opencode-courier#readme",

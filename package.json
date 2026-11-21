@@ -1,7 +1,7 @@
 {
   "name": "opencode-courier",
   "version": "0.18.4",
-  "description": "Session trees for OpenCode V2: child sessions message their parent mid-run, report with a status, and work in their own worktrees.",
+  "description": "Spawn OpenCode V2 sessions that talk back while they work.",
   "license": "MIT",
   "author": "Ivo Pogace <71701666+ivopogace@users.noreply.github.com>",
   "homepage": "https://github.com/ivopogace/opencode-courier#readme",

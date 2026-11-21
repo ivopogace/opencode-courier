@@ -1,8 +1,6 @@
 # opencode-courier
 
-**Sessions that talk while they work.** OpenCode V2's subagents wake you when they finish. With
-courier, child sessions message their parent mid-run, report with a status, split their part into
-trees, and work in their own git worktrees.
+**Spawn OpenCode V2 sessions that talk back while they work.**
 
 [![CI](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml/badge.svg)](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ivopogace_opencode-courier&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ivopogace_opencode-courier)

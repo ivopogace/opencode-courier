@@ -136,6 +136,7 @@ function decide(body) {
       if (call?.function?.name === "courier_send") return { tool: "shell", args: { command: "sleep 12" }, quick: true }
       if (call?.function?.name === "shell") return { text: "ROLLING FIRST FINISHED" }
     }
+    if (startedBy && first.includes("CHILD-BG-SHELL") && call?.function?.name === "shell") return { text: "CHILD HOLDING BG", hold: true }
     if (call?.function?.name === "courier_spawn" && !startedBy && messages.some((message) => textOf(message.content).includes("ROLLING FIRST DONE")))
       return { text: "ROOT STARTED NEXT" }
     if (startedBy && first.includes("CHILD-CHECKIN-MID")) {
@@ -179,6 +180,7 @@ function decide(body) {
   if (recent.includes("SUBAGENT-NO-ROOT-ASK")) return { text: "SUBAGENT NO ROOT DONE" }
   if (recent.includes("You are a subagent spawned by another session.")) return { text: "SUBAGENT HOLDING", hold: true }
   if (/<background-result kind="subagent" sessionID="ses_\w+" state=/.test(recent)) return { text: "SAW SUBAGENT END", delayed: true }
+  if (/<background-result kind="shell" [^>]*command="sleep 12 && echo COURIER-BG-DONE"/.test(recent)) return { text: "CHILD SAW SHELL END" }
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
   const nestBranch = branchIn(messages)
   if (parent && recent.includes("CHILD-NEST-MID"))
@@ -229,6 +231,7 @@ function decide(body) {
     return { tool: "subagent", args: { agent: "general", description: "Run the checks", prompt: "SUBAGENT-FIRST" } }
   if (parent && recent.includes("CHILD-SUBTREE-MID")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-LEAF" } }
   if (parent && recent.includes("CHILD-SUBTREE-LEAF")) return { text: "LEAF HOLDING", hold: true }
+  if (parent && recent.includes("CHILD-BG-SHELL")) return { tool: "shell", args: { command: "sleep 12 && echo COURIER-BG-DONE", background: true }, quick: true }
   if (parent && recent.includes("CHILD-MID-BREAKS")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-LEAF" } }
   if (parent && recent.includes("CHILD-NESTS-NATIVE")) return { tool: "courier_spawn", args: { task: "CHILD-QUESTION", native: true } }
   if (parent && recent.includes("CHILD-NESTS")) return { tool: "courier_spawn", args: { task: "CHILD-QUESTION" } }
@@ -295,6 +298,7 @@ function decide(body) {
   const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   if (recent.includes("COURIER-MID-BREAKS")) return { tool: "courier_spawn", args: { task: "CHILD-MID-BREAKS" } }
+  if (recent.includes("COURIER-BG-STOP")) return { tool: "courier_spawn", args: { task: "CHILD-BG-SHELL" } }
   if (recent.includes("COURIER-SUBTREE-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-MID" } }
   if (recent.includes("COURIER-IDLE-STOP")) return { tool: "courier_spawn", args: { task: "CHILD-IDLE-STOP-MID" } }
   if (recent.includes("COURIER-BLOCKED-STOP")) return { tool: "courier_spawn", args: { task: "CHILD-BLOCKED-STOP-MID" } }

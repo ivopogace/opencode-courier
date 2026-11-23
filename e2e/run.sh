@@ -234,7 +234,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:8 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:8 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:16 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -1585,6 +1585,32 @@ run_subtree() {
     "$([ "$handled" = true ] && [ "$(notices_with "$root" ended)" = '[]' ] && [ "$(notices_with "$middle" ended)" = '[]' ] && echo true || echo false)"
   check "the stop is noted for both" "$([ -n "$(kv get "report/$leaf/stopped")" ] && [ -n "$(kv get "report/$middle/stopped")" ] && echo true || echo false)"
   check "a failure notice did not follow either" "$([ "$handled" = true ] && notices_with "$root" failed | jq -r 'length == 0' || echo false)"
+
+  scenario "courier_stop leaves a background shell command running, and its end wakes the stopped session (#666)"
+  out=$(prompt "COURIER-BG-STOP")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the child started its command in the background, and its turn runs on" "$(has_text "$child" "Command moved to the background" 60)"
+  turn_ended "$root"
+  stopped=$(prompt_in "$root" "COURIER-SUBTREE-STOP $child" | tool_state courier_stop)
+  echo "  $(jq -c '.metadata.metadata | {stopped, told}' <<<"$stopped")"
+  check "courier_stop interrupted the child, and told no one, the root being its parent" \
+    "$(jq -r --arg child "$child" '.status == "completed" and (.metadata.metadata.stopped | map([.sessionID, .outcome]) == [[$child, "interrupted"]]) and .metadata.metadata.told == null' <<<"$stopped")"
+  check "the notice of the command's end woke the stopped child into a new turn" "$(has_text "$child" "CHILD SAW SHELL END" 45)"
+  shells=$(api "session/$child/message" | jq -c '[.data[] | select(.type == "synthetic" and .metadata.source == "shell") | {state: .metadata.state, done: (.text | contains("COURIER-BG-DONE"))}]')
+  echo "  $shells"
+  check "OpenCode told the child once that its command completed, not that it was cancelled" "$(jq -r '. == [{state: "completed", done: true}]' <<<"$shells")"
+  turn_ended "$child"
+  check "the child's new turn ended on its own" "$(session_info "$child" | jq -r '.outcome == "succeeded"')"
+  check "the notice counts as a new prompt, after the stop" \
+    "$(jq -n --argjson prompt "$(kv get "report/$child/prompt")" --argjson stopped "$(kv get "report/$child/stopped")" '$prompt.at > $stopped.at')"
+  handled=$(end_handled "$child" "$root" && echo true || echo false)
+  notices=$(notices_with "$root" ended)
+  echo "  $notices"
+  check "so the root, which stopped it, was told once that the child ended its turn without a report" \
+    "$(jq -r --arg child "$child" --arg handled "$handled" '$handled == "true" and length == 1 and (.[0] | contains("<courier from=\"" + $child + "\" ended=\"without-report\">") and contains("CHILD SAW SHELL END"))' <<<"$notices")"
+  check "and that notice woke the root" "$(has_text "$root" "PARENT TOLD SILENT" 45)"
+  turn_ended "$root"
 }
 
 run_idle_stop() {

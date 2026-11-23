@@ -227,8 +227,8 @@ What a native child (`courier_spawn` with `native: true`) rests on:
   `src/tree/relay.ts`.
 - **`opencode_session_interrupt`** (`packages/core/src/tool/plugin/session-interrupt.ts`, only with
   the `full_codemode` flag) stops any session of the project but the caller and its native parents,
-  and that session's native children. `CHILD_RULES` does not deny it, so a spawned session can stop
-  its courier parent or a sibling.
+  and that session's native children. `CHILD_RULES` denies it on `*`, as it does `automation_*`, so
+  a spawned session, native or not, cannot stop its courier parent or a sibling; a root keeps it.
 - **`session.list({ parentID })`** lists children from any location, 50 by default. Where:
   `src/tree/subtree.ts`.
 

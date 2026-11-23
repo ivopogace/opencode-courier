@@ -53,7 +53,9 @@ opencode plugin add opencode-courier
 ```
 
 `opencode plugin check` then shows `(update available)` when there is one, and
-`opencode plugin update` installs it. A failed check reads as "no update" and is only logged
+`opencode plugin update` installs it. An `opencode-courier@latest` or range entry installs it on its
+own, at a start and every 24 hours, also a release pinned to a newer OpenCode than yours; the bare
+name waits for `opencode plugin update`. A failed check reads as "no update" and is only logged
 (`failed to check plugin update` in `~/.local/share/opencode/log/`); look at your `.npmrc`'s
 registry and proxy settings.
 

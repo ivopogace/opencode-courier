@@ -165,6 +165,10 @@ that ran the model would go idle. A pin bump re-checks its name, its shape (cour
 - **Nothing checks the version**: neither `opencode plugin add` nor the loader reads
   `peerDependencies` or `engines`. Courier warns in the server log on another version. Where:
   `src/platform/version.ts`.
+- **An entry that follows a version updates itself**: `name@latest`, a range or a Git branch is
+  installed and reloaded at a start and every 24 hours (`packages/core/src/plugin/supervisor.ts`),
+  whatever host the new release is pinned to; a bare name, as `opencode plugin add opencode-courier`
+  writes it, is only reported as outdated. The docs install the bare name.
 - **The host's copies run**: `ensurePluginRuntime` (`packages/plugin/src/runtime.ts`) resolves
   `effect` and `@opencode/plugin*` to OpenCode's own, so the relay's Effects compose only with the
   host's `effect` version. Where: `package.json`.
@@ -221,6 +225,10 @@ What a native child (`courier_spawn` with `native: true`) rests on:
   `courier_stop` waits for it (`SETTLE_MS`). Given the id of the caller's child it prompts it as a
   plain `user` item, which the fan-up passes up; a pin bump re-checks it. Where: `src/tree/stop.ts`,
   `src/tree/relay.ts`.
+- **`opencode_session_interrupt`** (`packages/core/src/tool/plugin/session-interrupt.ts`, only with
+  the `full_codemode` flag) stops any session of the project but the caller and its native parents,
+  and that session's native children. `CHILD_RULES` does not deny it, so a spawned session can stop
+  its courier parent or a sibling.
 - **`session.list({ parentID })`** lists children from any location, 50 by default. Where:
   `src/tree/subtree.ts`.
 

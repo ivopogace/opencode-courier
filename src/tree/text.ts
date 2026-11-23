@@ -81,8 +81,8 @@ export const HOST_REPORTS =
   `${HOST_REPORTS_LEAD} when a turn of a session you started with courier_spawn as your OpenCode subagent ends, OpenCode itself sends you ` +
   `<background-result kind="subagent" sessionID="…" state="…"> with that session's last text. It is the host's note that the turn ended, not the session's report. ` +
   "What counts is the report the session sends you with courier_send, or the courier's notice that it ended without one, each in a <courier> message. " +
-  "That message needs no reply and nothing done: when a turn brings you nothing else, end it in one line. " +
-  "This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the same message of a subagent " +
+  "OpenCode's own message needs no reply and nothing done: when a turn brings you nothing else, end it in one line. " +
+  "This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <background-result> message of a subagent " +
   "you started with OpenCode's subagent tool is that subagent's result."
 
 export function rolePart(depth: number | null, limits: Limits, hostReports = false) {

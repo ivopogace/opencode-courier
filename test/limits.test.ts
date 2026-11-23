@@ -1029,7 +1029,7 @@ describe("spawn", () => {
     test("the text names the courier's child only: not a subagent started with OpenCode's tool, nor a session cleaned up", () => {
       expect(HOST_REPORTS).toContain("a session you started with courier_spawn as your OpenCode subagent")
       expect(HOST_REPORTS).toEndWith(
-        "This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <subagent> message of a subagent you started with OpenCode's subagent tool is that subagent's result.",
+        "This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <background-result> message of a subagent you started with OpenCode's subagent tool is that subagent's result.",
       )
       expect(HOST_REPORTS).not.toContain("\n")
       for (const depth of [DEFAULT_LIMITS.maxDepth, null]) expect(rolePart(depth, DEFAULT_LIMITS, true)).toBe(rolePart(depth, DEFAULT_LIMITS))

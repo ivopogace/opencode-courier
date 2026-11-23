@@ -35,7 +35,7 @@ const SUMMARY = "## Objective\n- Courier test"
 
 const TYPED_ENVELOPE = /<courier from="courier" route="prompt" in="ses_\w+">/
 
-const HOST_REPORT = /<subagent sessionID="(ses_\w+)" state="[^"]*"[^>]*>[\s\S]*?<\/subagent>/g
+const HOST_REPORT = /<background-result kind="subagent" sessionID="(ses_\w+)" state="[^"]*"[^>]*>[\s\S]*?<\/background-result>/g
 
 const withoutReportsOf = (started) => (message) => {
   if (message.role !== "user") return message
@@ -52,7 +52,7 @@ function courierChildReportsDropped(messages) {
   const strip = withoutReportsOf(started)
   return messages.flatMap((message) => {
     const stripped = strip(message)
-    return message.role === "user" && textOf(message.content).includes("<subagent ") && !textOf(stripped.content).trim() ? [] : [stripped]
+    return message.role === "user" && textOf(message.content).includes("<background-result kind=\"subagent\" ") && !textOf(stripped.content).trim() ? [] : [stripped]
   })
 }
 
@@ -178,7 +178,7 @@ function decide(body) {
   if (textOf(messages.findLast((message) => message.role === "user")?.content).includes("COURIER-HOLD")) return { text: "HOLDING", hold: true }
   if (recent.includes("SUBAGENT-NO-ROOT-ASK")) return { text: "SUBAGENT NO ROOT DONE" }
   if (recent.includes("You are a subagent spawned by another session.")) return { text: "SUBAGENT HOLDING", hold: true }
-  if (/<subagent sessionID="ses_\w+" state=/.test(recent)) return { text: "SAW SUBAGENT END", delayed: true }
+  if (/<background-result kind="subagent" sessionID="ses_\w+" state=/.test(recent)) return { text: "SAW SUBAGENT END", delayed: true }
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
   const nestBranch = branchIn(messages)
   if (parent && recent.includes("CHILD-NEST-MID"))
@@ -647,12 +647,12 @@ createServer((request, response) => {
     const rolePart = (system.match(/^opencode-courier role:/gm) ?? []).length > (system.match(/<context key="role">\n\s*opencode-courier role:/g) ?? []).length
     const updateRole = (body.messages ?? []).find(isInstructionUpdate)?.role ?? null
     const hostReports = [...everything.matchAll(/^OpenCode's own message at a turn end:.*$/gm)].map((match) => match[0])
-    const hostMessage = (body.messages ?? []).some((message) => message.role === "user" && /<subagent sessionID="ses_\w+" state=/.test(textOf(message.content)))
+    const hostMessage = (body.messages ?? []).some((message) => message.role === "user" && /<background-result kind="subagent" sessionID="ses_\w+" state=/.test(textOf(message.content)))
     const systemHash = createHash("sha256").update(system).digest("hex").slice(0, 16)
     const lessonsEntry = /(<|&lt;)context key="lessons"(>|&gt;)\n\s*opencode-courier lessons:/.test(everything)
     const standingEntry = /(<|&lt;)context key="standing"(>|&gt;)\n\s*opencode-courier standing:/.test(everything)
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
-    const automations = /opencode[._]automation_/.test(JSON.stringify(body.tools ?? []) + everything)
+    const automations = /^- automation \(\d+ tools?/m.test(everything) || /\bautomation[._]create\b/.test(JSON.stringify(body.tools ?? []) + everything)
     const opencodeTools = Math.max(-1, ...[...everything.matchAll(/^- opencode \((\d+) tools?/gm)].map((match) => Number(match[1])))
     const options = Object.fromEntries(Object.entries(body).filter(([key]) => !["messages", "tools", "stream", "stream_options", "tool_choice"].includes(key)))
     if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, updateRole, systemHash, hostReports, hostMessage, lessonsEntry, standingEntry, skills, automations, opencodeTools, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)

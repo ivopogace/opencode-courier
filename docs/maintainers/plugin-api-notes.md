@@ -1,10 +1,10 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.3.2` and OpenCode 2.3.2. Only two kinds are listed: traps no unit or e2e test
+`@opencode/plugin@2.4.1` and OpenCode 2.4.1. Only two kinds are listed: traps no unit or e2e test
 catches, and facts a pin bump must re-check. A trap a test fails on lives in that test. OpenCode's
 source is on the `v2` branch of https://github.com/anomalyco/opencode, each release tagged
-(`v2.3.2`); a host path is given where a pin bump must find the code again. A "since" stays only
+(`v2.4.1`); a host path is given where a pin bump must find the code again. A "since" stays only
 where the plugin branches on an older host. How the modules fit together:
 [architecture.md](architecture.md).
 
@@ -165,6 +165,10 @@ that ran the model would go idle. A pin bump re-checks its name, its shape (cour
 - **Nothing checks the version**: neither `opencode plugin add` nor the loader reads
   `peerDependencies` or `engines`. Courier warns in the server log on another version. Where:
   `src/platform/version.ts`.
+- **An entry that follows a version updates itself**: `name@latest`, a range or a Git branch is
+  installed and reloaded at a start and every 24 hours (`packages/core/src/plugin/supervisor.ts`),
+  whatever host the new release is pinned to; a bare name, as `opencode plugin add opencode-courier`
+  writes it, is only reported as outdated. The docs install the bare name.
 - **The host's copies run**: `ensurePluginRuntime` (`packages/plugin/src/runtime.ts`) resolves
   `effect` and `@opencode/plugin*` to OpenCode's own, so the relay's Effects compose only with the
   host's `effect` version. Where: `package.json`.
@@ -185,10 +189,10 @@ that ran the model would go idle. A pin bump re-checks its name, its shape (cour
 
 ## Feature flags
 
-- **Automations and Console watches are flags**, off in a release build and turned on by
+- **Console watches are a flag**, off in a release build and turned on by
   `experimental.<key>: true`, `experimental.all_flags` or `OPENCODE_FLAGS=all`
-  (`packages/schema/src/config/flag.ts`). `experimental.schedules` is read as `automations`. A pin
-  bump re-checks the list.
+  (`packages/schema/src/config/flag.ts`). Automations are no flag: they are on unless the config
+  says `"automations": false` (`packages/core/src/automation.ts`). A pin bump re-checks the list.
 
 ## Native `parentID`
 
@@ -199,9 +203,9 @@ What a native child (`courier_spawn` with `native: true`) rests on:
   courier passes `CHILD_RULES` and its metadata. Where: `src/tree/spawn.ts`.
 - **OpenCode reports every turn end to the parent**: when a child's execution succeeds, fails or is
   interrupted by the person, the host admits
-  `<subagent sessionID="…" state="completed|error|cancelled|running">` with its last text
-  (`metadata.source: "subagent"`, `steer`, no `resume: false`) and wakes the parent. Nothing opts
-  out. `notePrompt` keeps it from counting as a prompt, and
+  `<background-result kind="subagent" sessionID="…" state="completed|error|cancelled|running">` with its last text
+  (`packages/core/src/session/subagent-completion.ts`, `metadata.source: "subagent"`, `steer`, no `resume: false`) and wakes the parent. Nothing opts
+  out. `HOST_REPORTS` names the tag, so a pin bump re-checks it. `notePrompt` keeps it from counting as a prompt, and
   the parent's `role` entry explains it (`HOST_REPORTS`) rather than the `context` hook editing it,
   since it is the only copy of the child's last text. Where: `src/tree/events.ts`,
   `src/tree/text.ts`.
@@ -221,6 +225,10 @@ What a native child (`courier_spawn` with `native: true`) rests on:
   `courier_stop` waits for it (`SETTLE_MS`). Given the id of the caller's child it prompts it as a
   plain `user` item, which the fan-up passes up; a pin bump re-checks it. Where: `src/tree/stop.ts`,
   `src/tree/relay.ts`.
+- **`opencode_session_interrupt`** (`packages/core/src/tool/plugin/session-interrupt.ts`, only with
+  the `full_codemode` flag) stops any session of the project but the caller and its native parents,
+  and that session's native children. `CHILD_RULES` does not deny it, so a spawned session can stop
+  its courier parent or a sibling.
 - **`session.list({ parentID })`** lists children from any location, 50 by default. Where:
   `src/tree/subtree.ts`.
 
@@ -277,9 +285,12 @@ writes: [architecture.md](architecture.md#instruction-entries).
 
 ## OpenCode's automations
 
-- **An automation is invisible to the plugin**: no domain, no events, so a child that sets one to
+- **An automation sends the plugin no event**: `ctx.experimental.automation` creates, lists and
+  deletes them, and courier reads none, so a child that sets one to
   wake itself and ends its turn would read as ended without a report. Every spawned session gets
-  `CHILD_RULES`, `opencode_automation_*` denied on `*`; as Code Mode tools in `execute`'s catalog only
+  `CHILD_RULES`, `automation_*` denied on `*`: the tools are `create`, `list`, `pause`, `resume` and
+  `delete` in the `automation` namespace (`packages/core/src/tool/plugin/automation.ts`), their ids
+  and permission actions `automation_<name>`, which a pin bump re-checks. As Code Mode tools in `execute`'s catalog only
   a rule drops them (`Tool.snapshot`, `packages/core/src/tool.ts`), not the `context` hook. Hence
   `courier_later`'s own scheduler ([architecture.md](architecture.md#courier_laters-scheduler)).
   Where: `src/tree/spawn.ts`.

@@ -242,7 +242,7 @@ What a native child (`courier_spawn` with `native: true`) rests on:
   jobs before and after its interrupt, and the plugin context has no job domain to do the same.
 - **A job that ends later** posts `<background-result kind="shell" … state="completed">` as a
   synthetic item, which wakes the session into a new turn. Courier counts that item as a new
-  prompt, so the stop note no longer silences the session: its turn end gets the report reminder,
+  prompt, so the stop note does not silence the session: its turn end gets the report reminder,
   and its parent, the caller of `courier_stop` included, is told `ended="without-report"`. The
   `subtree` group of `e2e/run.sh` pins this; issue #666 tracks cancelling the jobs. Where:
   `src/tree/stop.ts`.

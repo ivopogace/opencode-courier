@@ -234,7 +234,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:8 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -1418,7 +1418,7 @@ run_schedules() {
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
   check "the child's session carries the courier's rule denying them" \
-    "$(session_info "$child" | jq -r '.permissions == [{ "action": "automation_*", "resource": "*", "effect": "deny" }]')"
+    "$(session_info "$child" | jq -r '.permissions == [{ "action": "automation_*", "resource": "*", "effect": "deny" }, { "action": "opencode_session_interrupt", "resource": "*", "effect": "deny" }]')"
   check "the root was offered them" \
     "$(jq -sr --arg parent "$parent" --arg child "$child" '
       ([.[] | select(.session == $child) | .opencodeTools] | max) as $below
@@ -1426,6 +1426,31 @@ run_schedules() {
   check "no request of the child offered them" \
     "$(jq -sr --arg child "$child" '[.[] | select(.session == $child and (.tools | length > 0))]
       | length > 0 and all(.automations | not)' "$WORK/model.log")"
+
+  scenario "with experimental.full_codemode on, a spawned session is not offered OpenCode's session interrupt, and its root is"
+  first_parent=$parent
+  child_delay 1000
+  stop_server
+  jq '.experimental.full_codemode = true' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "full_codemode on"
+  start_server
+  out=$(prompt "COURIER-TEST")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the child reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  check "the root's requests offered it" \
+    "$(jq -sr --arg parent "$parent" --arg first "$first_parent" '
+      ([.[] | select(.session == $first) | .opencodeTools] | max) as $before
+      | any(.[]; .session == $parent and (.sessionInterrupt or ($before >= 0 and .opencodeTools > $before)))' "$WORK/model.log")"
+  check "no request of the child offered it" \
+    "$(jq -sr --arg child "$child" '[.[] | select(.session == $child and (.tools | length > 0))]
+      | length > 0 and all(.sessionInterrupt | not)' "$WORK/model.log")"
+  stop_server
+  jq 'del(.experimental)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "full_codemode off"
+  start_server
 }
 
 run_roster() {
@@ -2205,7 +2230,7 @@ run_spawn_native() {
   mixed_native=$(for id in $members; do [ "$(session_info "$id" | jq -r '.parentID')" = "$parent" ] && echo "$id"; done | head -1)
   mixed_plain=$(grep -vxF "${mixed_native:-none}" <<<"$members" | head -1)
   check "one has the parent as its OpenCode parentID, with the courier's ruleset, not the parent's, and the other has none" \
-    "$([ -n "$mixed_native" ] && [ -n "$mixed_plain" ] && [ "$(session_info "$mixed_native" | jq -r '.permissions == [{ "action": "automation_*", "resource": "*", "effect": "deny" }]')" = true ] &&
+    "$([ -n "$mixed_native" ] && [ -n "$mixed_plain" ] && [ "$(session_info "$mixed_native" | jq -r '.permissions == [{ "action": "automation_*", "resource": "*", "effect": "deny" }, { "action": "opencode_session_interrupt", "resource": "*", "effect": "deny" }]')" = true ] &&
       [ "$(session_info "$mixed_plain" | jq -r '.parentID == null')" = true ] && echo true || echo false)"
   check "OpenCode lists only the subagent under the parent" \
     "$(api "session?parentID=$parent" | jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '[.data[].id] | index($native) != null and index($plain) == null')"
@@ -2271,7 +2296,7 @@ run_native() {
   info=$(session_info "$native_child")
   check "the child's OpenCode parentID is its parent, and courier's metadata is kept" \
     "$(jq -r --arg parent "$native_parent" '.parentID == $parent and .metadata.courier.parentID == $parent' <<<"$info")"
-  check "it has the courier's ruleset of its own" "$(jq -r '.permissions == [{ "action": "automation_*", "resource": "*", "effect": "deny" }]' <<<"$info")"
+  check "it has the courier's ruleset of its own" "$(jq -r '.permissions == [{ "action": "automation_*", "resource": "*", "effect": "deny" }, { "action": "opencode_session_interrupt", "resource": "*", "effect": "deny" }]' <<<"$info")"
   check "OpenCode lists it under its parent" \
     "$(api "session?parentID=$native_parent" | jq -r --arg child "$native_child" '[.data[].id] | index($child) != null')"
   check "the roster records it as native" "$(kv get "roster/$native_parent/$native_child" | jq -r '.native == true and .isolated == false')"
@@ -2295,7 +2320,7 @@ run_native() {
   api_prompt "$parent" "COURIER-ASK native"
   child=$(spawned_by "$parent" 45)
   check "the child, created with the courier's ruleset, does not" \
-    "$(session_info "$child" | jq -r --arg parent "$parent" '.parentID == $parent and .permissions == [{ "action": "automation_*", "resource": "*", "effect": "deny" }]')"
+    "$(session_info "$child" | jq -r --arg parent "$parent" '.parentID == $parent and .permissions == [{ "action": "automation_*", "resource": "*", "effect": "deny" }, { "action": "opencode_session_interrupt", "resource": "*", "effect": "deny" }]')"
   check "so it asks, and the parent is told once, that OpenCode shows the request to the person" \
     "$(has_text "$parent" "PARENT TOLD NATIVE PERMISSION" 45 >/dev/null; notices_with "$parent" asks | jq -r 'length == 1 and (.[0] | contains("shown=\"native\"") and contains("Do not ask them yourself"))')"
   check "and asks the person nothing itself" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"

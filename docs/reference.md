@@ -400,7 +400,9 @@ messages that fell due meanwhile arrive then.
 
 A spawned session cannot use OpenCode's automations (`automation_create` and the rest): a wake-up of
 theirs goes round the tree, so the child would read as having ended without a report.
-`courier_later` is the way for a child to wait. A root session keeps them.
+`courier_later` is the way for a child to wait. Nor can it use OpenCode's session interrupt
+(`opencode_session_interrupt`, with `experimental.full_codemode`), which would stop its parent or a
+sibling without telling the tree: `courier_stop` is the way. A root session keeps both.
 
 ### Check-ins
 

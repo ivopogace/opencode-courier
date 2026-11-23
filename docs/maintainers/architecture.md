@@ -119,11 +119,11 @@ session's entries once per instance and session.
 ## `courier_later`'s scheduler
 
 `courier_later` keeps its own scheduler rather than OpenCode's
-[automations](plugin-api-notes.md#opencodes-automations): a plugin cannot reach them, they are a feature
-flag off in release builds, and a firing carries no sender's envelope, does not wait for a running
+[automations](plugin-api-notes.md#opencodes-automations): a person can turn them off, the plugin API
+sends no event for them, and a firing carries no sender's envelope, does not wait for a running
 turn to end, tells `Waits` nothing and cannot be cancelled by `courier_stop`. The `experimental.idle`
-hook has no clock, so it cannot wake a session later. `e2e/run.sh`'s `schedules` group turns the
-flag on to cover `CHILD_RULES`.
+hook has no clock, so it cannot wake a session later. `e2e/run.sh`'s `schedules` group covers
+`CHILD_RULES`.
 
 The hub's tick, every 15 seconds, delivers what is due, and is the only way for a message that fell
 due before the plugin loaded. On top of it `scheduling/timer.ts` keeps one timer per message due

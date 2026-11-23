@@ -8,7 +8,7 @@ import { describeFailure, envelope } from "../src/kernel/protocol.js"
 import { childBrief, modelFormatRefusal, nativeIsolateRefusal, reportBody, spawnText, variantWithoutModelRefusal } from "../src/tree/text.js"
 import { childStore, progressKey, rosterKey, settledKey } from "../src/tree/store.js"
 
-const CHILD_RULES = [{ action: "opencode_automation_*", resource: "*", effect: "deny" }]
+const CHILD_RULES = [{ action: "automation_*", resource: "*", effect: "deny" }]
 
 type Call = { method: string; input: any }
 

@@ -37,7 +37,7 @@ version in its `package.json`. Every release and its version:
 <!-- compat-table:end -->
 
 OpenCode never checks the version. The plugin loads on any host from 2.0.4 on, but its tools may
-break on another version. The terminal part is tested on OpenCode 2.3.2 only. On a version other
+break on another version. The terminal part is tested on OpenCode 2.4.1 only. On a version other
 than the pinned one, the plugin writes a warning to the server log when it loads
 (`opencode serve --print-logs` shows it).
 

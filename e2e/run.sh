@@ -1428,6 +1428,7 @@ run_schedules() {
       | length > 0 and all(.automations | not)' "$WORK/model.log")"
 
   scenario "with experimental.full_codemode on, a spawned session is not offered OpenCode's session interrupt, and its root is"
+  first_parent=$parent
   child_delay 1000
   stop_server
   jq '.experimental.full_codemode = true' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
@@ -1439,9 +1440,9 @@ run_schedules() {
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
   check "the root's requests offered it" \
-    "$(jq -sr --arg parent "$parent" --arg child "$child" '
-      ([.[] | select(.session == $child) | .opencodeTools] | max) as $below
-      | any(.[]; .session == $parent and (.sessionInterrupt or ($below >= 0 and .opencodeTools > $below)))' "$WORK/model.log")"
+    "$(jq -sr --arg parent "$parent" --arg first "$first_parent" '
+      ([.[] | select(.session == $first) | .opencodeTools] | max) as $before
+      | any(.[]; .session == $parent and (.sessionInterrupt or ($before >= 0 and .opencodeTools > $before)))' "$WORK/model.log")"
   check "no request of the child offered it" \
     "$(jq -sr --arg child "$child" '[.[] | select(.session == $child and (.tools | length > 0))]
       | length > 0 and all(.sessionInterrupt | not)' "$WORK/model.log")"

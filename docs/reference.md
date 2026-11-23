@@ -325,10 +325,11 @@ Anyone can read any tree.
    limits until its parent drops it with `courier_cleanup`.
 4. With `cleanup: true`, their worktrees are removed by `courier_cleanup`'s rules, without `force`.
 
-When the target was interrupted, or was idle and owed a report or had reported `blocked`, its parent
-is told once, unless the parent is the caller; sessions under the target are not told. A stopped
-session stays in the tree and can be messaged again. A session started by the subtree while the stop
-runs may escape it.
+When the target was interrupted, or idle owing a report or after reporting `blocked`, its parent is
+told once, unless it is the caller; sessions under the target are not told. A stopped session stays
+in the tree and can be messaged again. A session started by the subtree while the stop runs may
+escape it. A stop leaves background jobs running: one ending wakes the session, whose parent is
+told it did not report.
 
 ## Steering a running tree
 

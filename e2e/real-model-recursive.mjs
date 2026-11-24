@@ -265,9 +265,15 @@ const reportedBy = (child, to, at) => {
   const list = tree.get(child)?.list ?? []
   return reportsTo(list, to).some((send) => sendEnd(list, send) <= at)
 }
+const reminded = (message) => message.type === "synthetic" && (message.text ?? "").includes(' reminder="report"')
+const corrects = (list, previous, send) => {
+  const remindedBetween = list.slice(previous.index + 1, send.index).some(reminded)
+  const later = spawnsOf(list).flatMap((child) => deliveriesFrom(list, child).slice(1)).filter((delivery) => delivery.index > previous.index && delivery.index < send.index)
+  return previous.status === "done" && later.some((delivery) => statusOf(delivery.message) !== "done" || !remindedBetween)
+}
 const reportedAfterChildren = ([id, entry]) => {
   const own = reportsTo(entry.list, entry.parentID)
-  if (own.length !== 1) return false
+  if (own.length === 0 || !own.slice(1).every((send, index) => corrects(entry.list, own[index], send))) return false
   const at = sendStart(entry.list, own[0])
   return spawnsOf(entry.list).every(
     (child) => deliveriesFrom(entry.list, child).some((delivery) => delivery.index < own[0].index) || reportedBy(child, id, at),

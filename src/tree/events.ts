@@ -72,6 +72,8 @@ const REMINDER = "reminder"
 const UNOWED = new Set(["user", "compaction", "move", TYPED, REMINDER])
 const OWN_SCHEDULED = "own-scheduled:"
 const MESSAGE_FROM = "from:"
+const SENT_KEYS = new Set(["source", "from", "status"])
+const AGREEING = new Set<unknown>([undefined, "done"])
 const HOST_REPORT = "host-report:"
 
 function kindOf(sessionID: string, item: Enqueued["data"]["item"]) {
@@ -82,8 +84,8 @@ function kindOf(sessionID: string, item: Enqueued["data"]["item"]) {
   if (metadata.reminder === "report") return REMINDER
   const ownCheckIn = typeof metadata.scheduled === "string" && metadata.from === sessionID && typeof metadata.scheduledAt === "number"
   if (ownCheckIn) return `${OWN_SCHEDULED}${metadata.scheduledAt}`
-  const statusless = typeof metadata.from === "string" && Object.keys(metadata).length === 2
-  return statusless ? `${MESSAGE_FROM}${metadata.from}` : item.type
+  const agrees = typeof metadata.from === "string" && Object.keys(metadata).every((key) => SENT_KEYS.has(key)) && AGREEING.has(metadata.status)
+  return agrees ? `${MESSAGE_FROM}${metadata.from}` : item.type
 }
 
 async function reportOfOwnChild(children: Pick<ChildStore, "indexedParent">, sessionID: string, kind: string | undefined) {

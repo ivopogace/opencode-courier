@@ -108,6 +108,9 @@ answering itself.
 (`e2e/real-model-recursive.mjs`) reads every session reached from the root: the root spawns two or more
 children in its first turn and a child two or more of its own in one turn, nobody polls, no session goes past `maxDepth`, every session reports with a status,
 each sub-orchestrator reports once after its children, and the files and the reply hold the values.
+A second report upward passes that check as a correction when a child's later report reached the
+sub-orchestrator after its first `done`. A report reminder between the two fails it only when that
+later report was `done`, which owes nothing; one with no later child report before it fails.
 A sub-orchestrator that starts exactly one child with no tool call of its own before it fails (a
 heuristic for a verifier that starts one implementor). Its notes say who loaded the skill and when,
 and who used a check-in or had a spawn refused.

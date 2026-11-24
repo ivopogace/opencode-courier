@@ -122,6 +122,36 @@ describe("nudgeSilent", () => {
     expect(await nudgeSilent(parents.ports, new Set(), outside, idle())).toBe(true)
   })
 
+  test("leaves a child that reported done before its own child's later done, but reminds one whose own child then reported failed, partial or blocked, until it answers the blocked one", async () => {
+    const reportedThenHeard = async (status: "done" | "failed" | "partial" | "blocked") => {
+      const fake = await prompted()
+      const children = childStore(fake.ports.storage)
+      await children.record({ ...child("ses_child"), sessionID: "ses_grandchild" })
+      await notePrompt(fake.ports, delivered("evt_g", 110, undefined, "ses_grandchild"))
+      await reportFrom(fake.ports, 150)
+      const courier = { session: { synthetic: async () => ({ id: "msg_g" }) }, storage: fake.ports.storage, now: () => 190 } as unknown as CourierPorts
+      await send(courier, "ses_grandchild", { sessionID: "ses_child", message: status, status })
+      const inbox = new Map<string, string>()
+      await noteEnqueued(fake.ports, inbox, { data: { sessionID: "ses_child", inboxID: "inb_1", item: { type: "synthetic", payload: { metadata: { source: "courier", from: "ses_grandchild", status } } } } })
+      return { ...fake, prompt: await notePrompt(fake.ports, delivered("evt_m", 200, "inb_1"), inbox) }
+    }
+
+    const done = await reportedThenHeard("done")
+    expect(done.prompt).toBe(false)
+    expect(await nudgeSilent(done.ports, new Set(), outside, idle())).toBe(false)
+    expect(done.sent).toEqual([])
+
+    for (const status of ["failed", "partial", "blocked"] as const) {
+      const heard = await reportedThenHeard(status)
+      expect(heard.prompt).toBe(true)
+      expect(await nudgeSilent(heard.ports, new Set(), outside, idle())).toBe(true)
+    }
+
+    const answered = await reportedThenHeard("blocked")
+    await notePrompt(answered.ports, delivered("evt_a", 210, undefined, "ses_grandchild"))
+    expect(await nudgeSilent(answered.ports, new Set(), outside, idle())).toBe(false)
+  })
+
   test("leaves a child that reported before OpenCode's report of its own native child, but reminds one a subagent's report reached", async () => {
     const enqueued = (inboxID: string, childID: string) => ({
       data: { sessionID: "ses_child", inboxID, item: { type: "synthetic", payload: { metadata: { source: "subagent", childID, agent: "subagent", state: "completed" } } } },

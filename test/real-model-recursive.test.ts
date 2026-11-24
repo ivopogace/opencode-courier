@@ -654,6 +654,40 @@ describe("the recursive checker and a sub-orchestrator that reports in the turn 
   })
 })
 
+function reworkRun(variant: "corrected" | "on-reminder" | "no-child-report" | "after-partial"): Run {
+  const tree = transcripts("no-fault")
+  const num = tree.ses_num!
+  if (variant === "after-partial") {
+    const upward = num.findLast((message) => message.type === "assistant" && JSON.stringify(message).includes("courier_send"))!
+    upward.content = [send("ses_root", "391; b is being rechecked", "partial")]
+  }
+  num.push(step("tool-calls", send("ses_b", "Recheck numbers/b.txt.")), step("stop", say("Sent b back.")), idle())
+  if (variant !== "no-child-report") num.push(report("ses_b", "done", "Rechecked numbers/b.txt: 1024."))
+  if (variant === "on-reminder") num.push(step("stop", say("Noted.")), synthetic('<courier from="courier" reminder="report">\nReport to ses_root.\n</courier>'))
+  num.push(step("tool-calls", send("ses_root", "391 and 1024, b rechecked", "done")), step("stop", say("Reported the correction.")), idle())
+  const root = tree.ses_root!
+  root.splice(root.length - 3, 0, report("ses_num", "done", "391 and 1024, b rechecked"))
+  if (variant === "after-partial") root.splice(root.indexOf(root.find((message) => (message.text as string | undefined)?.includes('from="ses_num" status="done"'))!), 1, report("ses_num", "partial", "391; b is being rechecked"))
+  return { tree, files: FILES }
+}
+
+describe("the recursive checker and a corrected report upward", () => {
+  test("a done report corrected after a child's later report passes", () => {
+    const run = check(reworkRun("corrected"))
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain("session ses_num reported 2 times")
+  })
+  test("a second report upward on courier's reminder fails", () => {
+    expect(check(reworkRun("on-reminder")).failed).toEqual([UPWARD])
+  })
+  test("a second report upward with no later report from a child before it fails", () => {
+    expect(check(reworkRun("no-child-report")).failed).toEqual([UPWARD])
+  })
+  test("a done report after a partial one upward fails, though a child's later report came between", () => {
+    expect(check(reworkRun("after-partial")).failed).toContain(UPWARD)
+  })
+})
+
 async function liveFinding(variant: Finding) {
   const { tree, files, expect: expected } = findingRun(variant)
   const running = tree.ses_count!.slice(0, 2)

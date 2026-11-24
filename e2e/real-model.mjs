@@ -77,7 +77,6 @@ const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" statu
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
 const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
 const reporterOf = (message) => reportersOf(message)[0]
-const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
 function deliveryOf(message) {
   const from = senderOf(message)
   if (!from) return message.type === "synthetic" ? "a message" : undefined
@@ -212,8 +211,6 @@ const checks = [
 const notes = []
 const loads = parentTools.filter((part) => part.name === "skill" && part.state.status === "completed").map((part) => part.state.input?.id)
 notes.push(loads.length ? `the parent loaded the skill(s): ${loads.join(", ")}` : "the parent loaded no skill")
-const decision = splitLineOf(firstText)
-notes.push(decision ? `the parent's split decision: ${decision.slice(0, 320)}` : "the parent stated no split decision in its first turn")
 const native = parentTools.filter((part) => part.name === "subagent")
 if (native.length) notes.push(`the parent also used OpenCode's own subagent tool ${native.length} time(s)`)
 const selfWorked = expected.filter((value) => firstText.includes(value))

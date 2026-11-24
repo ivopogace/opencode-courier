@@ -265,9 +265,6 @@ for (const [id, entry] of tree) {
   if (loads.length) notes.push(`${who(id)} loaded the skill(s): ${loads.join(", ")}`)
 }
 if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === "skill"))) notes.push("no session loaded a skill")
-const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
-const decision = splitLineOf(first.filter((message) => message.type === "assistant").map(textOf).join("\n"))
-if (decision) notes.push(`the root stated: ${decision.slice(0, 320)}`)
 for (const [id, entry] of [...tree].filter(([, entry]) => spawnsOf(entry.list).length > 0)) notes.push(`${who(id)} started ${spawnsOf(entry.list).length} session(s)`)
 const load = rootTools.findIndex((part) => loadsAnySkill(part) && part.state.input?.id === SKILL)
 notes.push(`the root orchestrated ${load === -1 ? `without ${SKILL} loaded` : load < rootTools.findIndex(childOf) ? `with ${SKILL} loaded before its first spawn` : `with ${SKILL} loaded only after its first spawn`}`)

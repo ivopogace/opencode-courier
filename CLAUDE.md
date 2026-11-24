@@ -11,8 +11,8 @@ the hub), `development.md` (commands, suites, CI), `real-model.md` and `releasin
 - `src/index.ts`: the server plugin and its composition root (tools, tick jobs, event modules, the
   `Waits` port). The only file that imports more than one module's `index.ts`.
 - `src/tui.tsx` and `src/rpc.ts`: the TUI and RPC entrypoints, never imported by the server half.
-  `src/skill.ts`: the `courier-orchestrate` skill, the tools' mechanics; planning and reviewing the
-  parts is left to the person's own skills.
+  `src/skill.ts`: the `courier-orchestrate` skill, the tools' mechanics; whether to start
+  sessions and how to divide work is left to the person.
 - `src/kernel/`: what models see of the protocol (`protocol.ts`) and the tool helpers (`tool.ts`).
 - `src/platform/`: the process-wide hub, the scheduler loop, OpenCode's event stream, storage helpers.
   Imports nothing outside itself.
@@ -75,9 +75,10 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   entry before its first prompt, and is put again only when the session starts its first native
   child, which arrives as one instruction update and leaves the cached
   prefix alone; where `context.ts` adds it as a system part instead, it is the same on every
-  request. So `courier_spawn` does not gate on the skill being loaded. The skill
-  states the root's split rule and the split-line forms on purpose: the root has no brief, its role
-  line loses the rule at its first spawn, and a brief can be compacted away.
+  request. So `courier_spawn` does not gate on the skill being loaded. When to
+  start a session is stated once, in `courier_spawn`'s description: only when the person or the
+  session's task asks. No model-facing string says when to divide a task, and a root that has
+  started no session gets no role part.
 - Feature work goes on a branch and through a PR with green CI; `Closes #N` in the body.
 - No comments, in any file: no line or block comment, no TSDoc, no docstring, no script header. A
   fact about OpenCode or the host goes in docs/maintainers/plugin-api-notes.md, a script's usage in

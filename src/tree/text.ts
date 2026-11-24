@@ -1,5 +1,5 @@
 import { obj, str } from "../platform/json.js"
-import { clipText, defuse, defuseBlock, END_TURN, ROOT_SPLIT_LINE, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
+import { clipText, defuse, defuseBlock, END_TURN, SKILL_ID, STATUSES } from "../kernel/protocol.js"
 import { retryDelay, type ModelRef } from "./domain.js"
 import type { Artifacts, CleanupResult, ExecutionError, Limits, Sent } from "./ports.js"
 
@@ -24,7 +24,7 @@ export function childBrief(parentID: string, task: string, depth: number, limits
       "a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with " +
       "courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel " +
       "and send your report.",
-    "If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API " +
+    "If you find something the other parts of the job need (an assumption in your task that is wrong, a shared file or API " +
       "that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes " +
       "it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own " +
       "part. Progress alone is not worth a message.",
@@ -33,7 +33,7 @@ export function childBrief(parentID: string, task: string, depth: number, limits
     "If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.",
     "",
     ...(branch ? [...isolationRule(branch, depth < limits.maxDepth), ""] : []),
-    ...splitRule(parentID, depth, limits),
+    limitsLine(depth, limits),
     "",
     "Task:",
     task,
@@ -47,28 +47,19 @@ function isolationRule(branch: string, mayPass: boolean) {
       "session that started you can merge it. Uncommitted work is not in your report.",
     ...(mayPass
       ? [
-          `If you split your task and start a session with isolate: true, commit first: its worktree starts from your current HEAD, ` +
+          `If you start a session with isolate: true, commit first: its worktree starts from your current HEAD, ` +
             "not from your uncommitted changes. Merge each branch it reports into yours before you report.",
         ]
       : []),
   ]
 }
 
-function splitRule(parentID: string, depth: number, limits: Limits) {
-  if (depth >= limits.maxDepth)
-    return [`You are at depth ${depth}, the deepest the session tree goes, so you cannot start sessions: do the task yourself.`]
-  return [
-    `You are at depth ${depth} of a session tree that goes at most ${limits.maxDepth} deep. Split your task or do it yourself:`,
-    "- Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one " +
-      `session per part with courier_spawn, at most ${limits.maxChildren} of yours running at once and ${limits.maxTotal} in the whole tree.`,
-    "- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: " +
-      "a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. " +
-      "One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.",
-    `- Say which in one line of your reply: ${SPLIT_LINE}.`,
-    "- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with " +
-      "courier_tree or sleep: each report wakes you. Check and integrate each part yourself when it reports " +
-      `(never hand that checking to another session), and once every part has reported, send ${parentID} one combined report.`,
-  ]
+function limitsLine(depth: number, limits: Limits) {
+  if (depth >= limits.maxDepth) return `You are at depth ${depth}, the deepest the session tree goes, so you cannot start sessions.`
+  return (
+    `You are at depth ${depth} of a session tree that goes at most ${limits.maxDepth} deep: at most ${limits.maxChildren} sessions you start with courier_spawn run at once and ` +
+    `${limits.maxTotal} in the whole tree. Your one report comes after every session you started has reported.`
+  )
 }
 
 export const ROLE_PREFIX = "opencode-courier role:"
@@ -85,35 +76,27 @@ export const HOST_REPORTS =
   "This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <background-result> message of a subagent " +
   "you started with OpenCode's subagent tool is that subagent's result."
 
-export function rolePart(depth: number | null, limits: Limits, hostReports = false) {
+export function rolePart(depth: number, limits: Limits, hostReports = false) {
   const role = roleLine(depth, limits)
-  return hostReports && depth !== null && depth < limits.maxDepth ? `${role}\n${HOST_REPORTS}` : role
+  return hostReports && depth < limits.maxDepth ? `${role}\n${HOST_REPORTS}` : role
 }
 
-function roleLine(depth: number | null, limits: Limits) {
+function roleLine(depth: number, limits: Limits) {
   const { maxDepth, maxChildren, maxTotal } = limits
   const budget = `At most ${maxChildren} of the sessions you start run at once, and ${maxTotal} in the whole tree.`
-  if (depth === null)
-    return (
-      `${ROLE_PREFIX} root, no sessions started yet. Before a task with 2 or more independent, substantial parts touching separate files or areas, load the ` +
-      `${SKILL_ID} skill and decide whether to split it across sessions (doing it yourself is fine; so is handing a heavy task, with long ` +
-      `reading, many edits or long runs, whole to one session to keep your context, but never a small one), and say ` +
-      `which in one line of your reply: ${ROOT_SPLIT_LINE}.`
-    )
   if (depth === 0)
     return (
-      `${ROLE_PREFIX} root orchestrator. You started sessions with courier_spawn, and they may start their own, ` +
-      `down to ${maxDepth} levels below you. ${budget} Check and integrate what each one reports yourself. ` +
+      `${ROLE_PREFIX} top of the session tree. You started sessions with courier_spawn, and they may start their own, ` +
+      `down to ${maxDepth} levels below you. ${budget} ` +
       `Load the ${SKILL_ID} skill if it is not in your context.`
     )
   if (depth < maxDepth)
     return (
-      `${ROLE_PREFIX} sub-orchestrator, at depth ${depth} of at most ${maxDepth}. Before you decide whether to split, load the ${SKILL_ID} ` +
-      `skill. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started ${count(maxDepth - depth, "level")} below you. ${budget}`
+      `${ROLE_PREFIX} depth ${depth} of at most ${maxDepth}. Sessions can be started with courier_spawn ${count(maxDepth - depth, "level")} below you; ` +
+      `before you start one, load the ${SKILL_ID} skill. ${budget}`
     )
   return (
-    `${ROLE_PREFIX} leaf, at depth ${depth}, the deepest the session tree goes. You cannot start sessions: do your ` +
-    "task yourself and report with courier_send to the session that started you."
+    `${ROLE_PREFIX} leaf, at depth ${depth}, the deepest the session tree goes. You cannot start sessions; report with courier_send to the session that started you.`
   )
 }
 

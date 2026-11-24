@@ -109,7 +109,9 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
     name: "courier_spawn",
     options: { codemode: false },
     description:
-      "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a " +
+      "Start a new OpenCode session on a task and return immediately. Use it only when the person, a skill or instruction " +
+      "of theirs, or the task you were started with asks for a session, never on your own initiative; the " +
+      "courier-orchestrate skill says how the sessions work. It runs on your model, unless you name a model or a " +
       "variant (reasoning effort) fit for the task. The session reports " +
       "back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report " +
       "instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). " +

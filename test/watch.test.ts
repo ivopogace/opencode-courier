@@ -654,7 +654,7 @@ describe("what makes a child owe a report", () => {
     expect(await afterReport(parents)).toHaveLength(1)
   })
 
-  test("its own child's message, with a status or without, delivered after it reported does not, but its parent's or another session's does", async () => {
+  test("its own child's message without a status or with done, delivered after it reported, does not; its parent's, another session's or its child's failed, partial or blocked does", async () => {
     const from = (sender: string, extra = {}) => [
       enqueued("evt_e", "inb_1", "synthetic", "ses_child", { source: "courier", from: sender, ...extra }),
       delivered("evt_d", 160, "ses_child", "inb_1"),
@@ -664,13 +664,15 @@ describe("what makes a child owe a report", () => {
     expect(await afterReport(from("ses_parent"))).toHaveLength(1)
     expect(await afterReport(from("ses_other"))).toHaveLength(1)
     expect(await afterReport(from("ses_grandchild", { status: "done" }))).toEqual([])
-    expect(await afterReport(from("ses_grandchild", { status: "partial" }))).toEqual([])
+    expect(await afterReport(from("ses_grandchild", { status: "failed" }))).toHaveLength(1)
+    expect(await afterReport(from("ses_grandchild", { status: "partial" }))).toHaveLength(1)
+    expect(await afterReport(from("ses_grandchild", { status: "blocked" }))).toHaveLength(1)
     expect(await afterReport(from("ses_grandchild", { status: "done" }), "blocked")).toHaveLength(1)
     expect(await afterReport(from("ses_grandchild"), "blocked")).toHaveLength(1)
     expect(await afterReport(from("ses_grandchild", { failed: true }))).toHaveLength(1)
   })
 
-  test("its own child's message, with a status or without, delivered before it reported does, the report still owed", async () => {
+  test("its own child's message without a status or with done, delivered before it reported, does, the report still owed", async () => {
     const { ports } = fakePorts()
     await childStore(ports.storage).record(child())
     await childStore(ports.storage).record({ ...child("ses_child"), sessionID: "ses_grandchild" })

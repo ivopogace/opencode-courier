@@ -562,6 +562,7 @@ function earlyMid(messages) {
   if (!called.includes("courier_send")) return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MID DONE EARLY", status: "done" } }
   const recent = messages.slice(messages.findLastIndex((message) => message.role === "assistant") + 1).map((message) => textOf(message.content)).join("\n")
   if (recent.includes("GRANDCHILD-REPEATS-DONE")) return { text: "MID SAW REPEATED REPORT" }
+  if (recent.includes("GRANDCHILD-FAILS-LATER")) return { text: "MID SAW FAILED REPORT" }
   return undefined
 }
 

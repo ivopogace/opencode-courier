@@ -1,6 +1,6 @@
 {
   "name": "opencode-courier",
-  "version": "0.18.5",
+  "version": "1.0.0",
   "description": "Start multiple OpenCode V2 sessions from one and coordinate them in parallel.",
   "license": "MIT",
   "author": "Ivo Pogace <71701666+ivopogace@users.noreply.github.com>",

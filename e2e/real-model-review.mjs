@@ -369,11 +369,6 @@ for (const [id, entry] of tree) {
   if (loads.length) notes.push(`${who(id)} loaded the skill(s): ${loads.join(", ")}`)
 }
 if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === "skill"))) notes.push("no session loaded a skill")
-const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
-for (const [id, entry] of tree) {
-  const decision = splitLineOf((turnsOf(entry.list)[0] ?? []).filter((message) => message.type === "assistant").map(textOf).join("\n"))
-  if (decision) notes.push(`${who(id)} stated: ${decision.slice(0, 320)}`)
-}
 for (const [id, entry] of orchestrators) {
   const checkIns = toolsOf(entry.list).filter((part) => part.name === "courier_later" && part.state.status === "completed").length
   const cancelled = toolsOf(entry.list).filter((part) => part.name === "courier_cancel" && part.state.status === "completed").length

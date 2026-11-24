@@ -153,14 +153,10 @@ So a child that is `blocked`, or that ended its turn without reporting, counts u
 its parent drops it with `courier_cleanup`, even after a stop; so does a session waiting for its own
 children. Renaming, archiving or switching a session's model does not make it live.
 
-**The brief.** Each spawned session gets its task with a brief: its depth, the limits, how to
-report, and whether to split. Below `maxDepth` it splits a task with two or more independent,
-substantial parts, one session per part, and does a smaller one itself; at `maxDepth` it does the
-task itself. Its decision is one line in its transcript: `split: no, because …` or
-`split: <n> parts: …`; the root may also write `split: 1 part: …` to hand a heavy task whole to one
-session and keep its own context. A session that splits ends its turn while the parts work and
-sends its parent one combined report. A finding the other parts need goes up at once, as a message
-without a status. Text you type into a spawned session is passed up by courier
+**The brief.** Each spawned session gets its task with a brief: its depth, the limits and how to
+report. It does not say when to divide a task: a session starts sessions of its own only when its
+task asks for them. One that did sends its parent its one report after they have reported. A
+finding the other sessions need goes up at once, as a message without a status. Text you type into a spawned session is passed up by courier
 ([steering](#steering-a-running-tree)), and its report says what it did because of it.
 
 **The tools a leaf is offered.** A leaf cannot start sessions, so it is offered only `courier_send`,
@@ -173,8 +169,11 @@ the [tree panel](#the-tree-panel).
 ## The courier-orchestrate skill
 
 The plugin registers one OpenCode skill, `courier-orchestrate`, in every location: how its tools
-behave when a session splits a task. Models load it when they decide whether to split a task; a
-spawned session is told to load it too, except a leaf. In the TUI, `/skills` attaches it to your
+behave once sessions are started. Whether to start sessions, how many and for what is yours to
+say, in your prompt or your own skills: `courier_spawn` tells a model to use it only when you or
+its task ask for a session. Of checking a session's work the skill says one thing: a report is the
+session's own claim, to be checked before it is relied on. A session that started sessions, or
+may, is told to load it. In the TUI, `/skills` attaches it to your
 prompt. Without it, the brief, the tool descriptions and courier's notices still carry the rules.
 Loading it asks the `skill` permission like any skill. To hide it, deny it in `permissions`:
 `{ "action": "skill", "resource": "courier-orchestrate", "effect": "deny" }`.

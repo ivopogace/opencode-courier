@@ -224,7 +224,7 @@ bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory
 
 A label before `=` names the condition; several directories may share one. Each row has the
 verdict, the score, skill loads per depth, polled sessions, requests, the cache read and uncached
-input tokens per request, the duration and the `split:` lines; a line under each table gives the
+input tokens per request and the duration; a line under each table gives the
 means over its finished runs. The cache column is what a change to the role part is judged by:
 compare it before and after, on one model.
 

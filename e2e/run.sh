@@ -811,9 +811,9 @@ run_depth() {
     "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")) and '"$ALL_TOOLS"')' "$WORK/model.log")"
   check "the root had all eight tools on every request, before its first spawn and after (#633)" \
     "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0))] | length > 1 and all('"$ALL_TOOLS"')' "$WORK/model.log")"
-  check "the root was pointed to the skill until it had started a child, then named root orchestrator" \
+  check "the root had no role line until it had started a child, then was named root orchestrator" \
     "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | index("root orchestrator") as $i
-      | $i > 0 and (.[:$i] | all(. == "root")) and (.[$i:] | all(. == "root orchestrator"))' "$WORK/model.log")"
+      | $i > 0 and (.[:$i] | all(. == null)) and (.[$i:] | all(. == "root orchestrator"))' "$WORK/model.log")"
   check "a leaf that has reported reads as finished and owes no report, so it no longer counts against the limits" \
     "$(for _ in $(seq 1 30); do leaf=$(jq -r '.[0]' <<<"$leaves"); [ "$(finished "$leaf")" = true ] && [ "$(reported "$leaf")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
   leaf=$(jq -r '.[0]' <<<"$leaves")
@@ -853,9 +853,9 @@ run_role_entry() {
     "$(jq -sr --arg leaf "$role_leaf" '[.[] | select(.session == $leaf and (.tools | length > 0))]
       | length > 0 and all(.role == "leaf" and '"$LEAF_TOOLS"')' "$WORK/model.log" |
       grep -qx true && jq -sr --arg leaf "$role_leaf" '[.[] | select(.type == "probe.context" and .sessionID == $leaf)] | length > 0 and all(.role == "leaf")' "$WORK/probe.log" | grep -qx true && echo true || echo false)"
-  check "the root was pointed to the skill in a part of the hook's until it had started a child, then named root orchestrator by its entry alone" \
+  check "the root had no role line, in a part or an entry, until it had started a child, then was named root orchestrator by its entry alone" \
     "$(jq -sr --arg root "$role_root" '[.[] | select(.session == $root and (.tools | length > 0))] | (map(.role) | index("root orchestrator")) as $i
-      | $i > 0 and (.[:$i] | all(.role == "root" and .rolePart and (.roleEntry | not))) and (.[$i:] | all(.role == "root orchestrator" and .roleEntry and (.rolePart | not)))' "$WORK/model.log")"
+      | $i > 0 and (.[:$i] | all(.role == null and (.rolePart | not) and (.roleEntry | not))) and (.[$i:] | all(.role == "root orchestrator" and .roleEntry and (.rolePart | not)))' "$WORK/model.log")"
   echo "  instruction updates in the root's transcript: $(instruction_updates "$role_root")"
   check "the root's transcript shows its entries' arrival as system messages, Instructions updated: api/…, one naming the role" \
     "$(instruction_updates "$role_root" | jq -r 'length >= 1 and any(contains("api/role"))')"
@@ -1300,7 +1300,7 @@ run_skill() {
   check "every request of the session listed it among the available skills" \
     "$(jq -sr --arg session "$session" '[.[] | select(.session == $session and (.tools | length > 0))] | length > 0 and all(.skills | index("courier-orchestrate"))' "$WORK/model.log")"
   check "the model loaded it with the skill tool and got the tools' mechanics" \
-    "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | tojson | contains("Below the root, never start one session for the whole task") and contains("or, at the root only, `split: 1 part:") and contains("Open the files and run the project'"'"'s checks yourself") and contains("If courier_spawn is not among your tools, you cannot split") and contains("never answer for the person") and contains("are not in this skill: if a skill for them is listed to you, load it too") and (contains("verifier") | not))')"
+    "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | tojson | contains("comes from the person, their skills or your task, not from this skill") and contains("A report is the session'"'"'s own claim: courier does not check it") and contains("never answer for the person") and (contains("split") | not) and (contains("verifier") | not))')"
   check "attached to the person's prompt, its text reached the model" \
     "$([[ $(person "session/$session/prompt" '{"text":"COURIER-SKILL-ATTACHED","skills":[{"id":"courier-orchestrate"}]}') == 20* ]] && has_text "$session" "SKILL SEEN" 30)"
   out=$(prompt "COURIER-SKILL-READ")

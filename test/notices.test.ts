@@ -64,7 +64,7 @@ describe("tools", () => {
   test("courier_spawn, courier_send, courier_later and courier_cleanup say nothing of a group or a finding", () => {
     const described = (name: string) => registered.find((tool) => tool.name === name).description
     expect(described("courier_spawn")).toBe(
-      "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Each report wakes you as it comes. DO NOT poll it or call courier_tree in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself, in case the reports never come, and courier_cancel it when the last report arrives: a report does not cancel it.",
+      "Start a new OpenCode session on a task and return immediately. Use it only when the person, a skill or instruction of theirs, or the task you were started with asks for a session, never on your own initiative; the courier-orchestrate skill says how the sessions work. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Each report wakes you as it comes. DO NOT poll it or call courier_tree in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself, in case the reports never come, and courier_cancel it when the last report arrives: a report does not cancel it.",
     )
     expect(described("courier_send")).toBe(
       "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and the artifacts you produced, or to steer a session you started: a session that is working reads the message at its next step, after the tool call it is running has returned; nothing is interrupted. The status is carried as an attribute of the message; without one, a message to the session that started you is progress, not your report. A message to a session you started carries no status: one given is dropped.",
@@ -107,84 +107,65 @@ describe("envelope and child brief", () => {
     }
   })
   test("rolePart", () => {
-    for (const depth of [0, 1, 2, 3, null]) expect(tree.rolePart(depth, limits)).toMatchSnapshot()
-    for (const depth of [0, 1, 2, 3, null]) expect(tree.rolePart(depth, limits)).toStartWith(tree.ROLE_PREFIX)
+    for (const depth of [0, 1, 2, 3]) expect(tree.rolePart(depth, limits)).toMatchSnapshot()
+    for (const depth of [0, 1, 2, 3]) expect(tree.rolePart(depth, limits)).toStartWith(tree.ROLE_PREFIX)
   })
   test("rolePart of a session OpenCode's own message at a native child's turn end can reach", () => {
     expect(tree.HOST_REPORTS).toMatchSnapshot()
     expect(tree.HOST_REPORTS).toStartWith(tree.HOST_REPORTS_LEAD)
     for (const depth of [0, 1, 2]) expect(tree.rolePart(depth, limits, true)).toMatchSnapshot()
-    for (const depth of [3, null]) expect(tree.rolePart(depth, limits, true)).toBe(tree.rolePart(depth, limits))
+    expect(tree.rolePart(3, limits, true)).toBe(tree.rolePart(3, limits))
   })
   test("the courier-orchestrate skill", () => {
     expect(kernel.SKILL_ID).toBe("courier-orchestrate")
     expect(skill.SKILL_DESCRIPTION).toMatchSnapshot()
     expect(skill.SKILL_CONTENT).toMatchSnapshot()
     expect(skill.SKILL_DESCRIPTION.length).toBeLessThan(400)
-    expect(skill.SKILL_CONTENT).toContain("If courier_spawn is not among your tools, you cannot split")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.")
-    expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
-    expect(skill.SKILL_CONTENT).toContain(`or, at the root only, ${kernel.ONE_PART_LINE}`)
-    expect(skill.SKILL_CONTENT).toContain("Below the root, never start one session for the whole task")
-    expect(skill.SKILL_CONTENT).toContain("At the root, the top session of the tree, which has no brief: split a task with 2 or more independent, substantial parts touching separate files or areas")
-    expect(skill.SKILL_CONTENT).toContain("Several whole jobs in one prompt, such as 4 tickets, are that many parts")
-    expect(skill.SKILL_CONTENT).toContain("When they do not all fit the tree's limits at once, start the next as each report frees a slot; a blocked part keeps its slot.")
-    expect(skill.SKILL_CONTENT).toContain("A part that depends on another starts once that one has reported and its branch, if isolated, is merged into your checkout")
-    expect(skill.SKILL_CONTENT).toContain("(an isolated part sees only committed project skills)")
-    expect(skill.SKILL_CONTENT).not.toContain("it sees the same list")
-    expect(skill.SKILL_CONTENT).toContain("A partial or failed report: have it finish or retry with courier_send, do the rest yourself, or start a replacement.")
-    expect(skill.SKILL_CONTENT).toContain("Then courier_cleanup each session you are done with, isolated or not.")
-    expect(skill.SKILL_CONTENT).not.toContain("a stopped one still counts")
-    expect(skill.SKILL_CONTENT).not.toMatch(/\bat the top\b/i)
+    expect(skill.SKILL_DESCRIPTION).toContain("Load it when you are asked to start sessions with courier_spawn")
+    expect(skill.SKILL_CONTENT).toContain("Whether to start sessions, how many and for what comes from the person, their skills or your task, not from this skill.")
+    expect(skill.SKILL_CONTENT).toContain("When the sessions asked for do not all fit the tree's limits at once, start the next as each report frees a slot; a blocked session keeps its slot.")
+    expect(skill.SKILL_CONTENT).toContain("(an isolated session sees only committed project skills)")
+    expect(skill.SKILL_CONTENT).toContain("A report is the session's own claim: courier does not check it, so check it before you rely on it.")
+    expect(skill.SKILL_CONTENT).toContain("A session that reported partial or failed takes its task up again when you courier_send it.")
+    expect(skill.SKILL_CONTENT).toContain("git merge courier/<session> brings it into your checkout. courier_cleanup removes a session you are done with, isolated or not.")
     expect(skill.SKILL_CONTENT).toContain("Reply without calling more tools; reports and notices wake you")
-    expect(skill.SKILL_CONTENT).not.toContain("courier_later")
-    expect(skill.SKILL_CONTENT).toContain("only to the sessions it affects, and, below the root, also to the session that started you when it reaches past your part, as your brief says")
+    expect(skill.SKILL_CONTENT).toContain("only to the sessions it affects, and, below the root, also to the session that started you when it reaches past your task, as your brief says")
     expect(skill.SKILL_CONTENT).toContain("pass it only to the sessions you started that it changes")
-    expect(skill.SKILL_CONTENT).not.toContain("or carries the person's words, as your brief says")
-    expect(skill.SKILL_CONTENT).not.toContain("A session's account of what the person told it")
-    expect(skill.SKILL_CONTENT).not.toContain("the person's word:")
-    expect(skill.SKILL_CONTENT).not.toContain("never tell a session to undo")
-    expect(skill.SKILL_CONTENT).not.toContain("cancelled when")
+    expect(skill.SKILL_CONTENT).toContain("At the root, a permission request or question from below arrives with its own instructions: follow them, and never answer for the person")
+    expect(skill.SKILL_CONTENT).toContain("Name the skills it should load, from those listed to you")
+    expect(skill.SKILL_CONTENT).not.toMatch(/\bat the top\b/i)
+    for (const cut of ["courier_answer", "relayed nowhere", "native", "model and variant", "courier_recall", "courier_note", "delivers", "failed turn does not", "names your depth", "permission rule", "courier_later", "cancelled when", "the person's word:", "never tell a session to undo", "bun run", "node_modules", "pull request"])
+      expect(skill.SKILL_CONTENT).not.toContain(cut)
     const described = (name: string) => registered.find((tool) => tool.name === name).description
     expect(described("courier_answer")).toContain("For a question, the question tool call the notice asks for passes the person's answer on by itself; use answers only when they answered some other way")
     expect(described("courier_cancel")).toContain("Nothing else cancels it but courier_stop of the session it is for.")
-    expect(skill.SKILL_CONTENT).toContain("At the root, a permission request or question from below arrives with its own instructions: follow them, and never answer for the person")
-    expect(skill.SKILL_CONTENT).toContain("Open the files and run the project's checks yourself")
-    expect(skill.SKILL_CONTENT).toContain("The task is done only when every part is verified and integrated")
-    for (const cut of ["courier_answer", "relayed nowhere", "native", "model and variant", "courier_recall", "courier_note", "delivers", "failed turn does not", "names your depth", "permission rule"])
-      expect(skill.SKILL_CONTENT).not.toContain(cut)
-    expect(skill.SKILL_DESCRIPTION).toContain("Load it when you decide whether to split")
-    expect(skill.SKILL_DESCRIPTION).not.toContain("before you split")
-    expect(skill.SKILL_CONTENT).not.toContain("bun run <script>")
-    expect(skill.SKILL_CONTENT).toContain("Name the skills it should load for its part, from those listed to you")
-    expect(skill.SKILL_CONTENT).not.toContain("about splitting work here")
-    for (const policy of ["When the core is coupled", "review stage", "scout", "reviewer", "verifier", "implementor", "count 6 live sessions", "bun run", "node_modules", "pull request"])
-      expect(skill.SKILL_CONTENT).not.toContain(policy)
-    expect(skill.SKILL_DESCRIPTION).not.toContain("parallel work")
-    expect(skill.SKILL_CONTENT).toContain("Planning the parts, staging a tightly coupled core and reviewing the merge are not in this skill: if a skill for them is listed to you, load it too.")
-    expect(skill.SKILL_DESCRIPTION).toContain("2 or more independent, substantial parts touching separate files or areas")
-    expect(tree.rolePart(null, limits)).toContain("Before a task with 2 or more independent, substantial parts touching separate files or areas")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(kernel.SPLIT_LINE)
-    expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
-    expect(tree.rolePart(null, limits)).toContain(kernel.ROOT_SPLIT_LINE)
-    expect(kernel.ROOT_SPLIT_LINE).toBe(`${kernel.SPLIT_LINE} or ${kernel.ONE_PART_LINE}`)
-    expect(kernel.SPLIT_LINE).not.toContain("1 part")
-    for (const depth of [1, 2, 3]) expect(tree.childBrief("ses_parent", "Fix the bug", depth, limits)).not.toContain(kernel.ONE_PART_LINE)
-    for (const depth of [0, 1, 2, 3]) expect(tree.rolePart(depth, limits)).not.toContain(kernel.ONE_PART_LINE)
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("start the parts, then end your turn while they work")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Do not poll with courier_tree or sleep: each report wakes you. Check and integrate each part yourself when it reports")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("once every part has reported, send ses_parent one combined report")
-    expect(skill.SKILL_CONTENT).toContain("- Each report wakes you.\n- No two parts edit the same files")
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(
       "Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result).\nIf you need a decision",
     )
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("send it to the parent at once with courier_send without a status")
-    expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Your one report comes after every session you started has reported.")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).toContain("You are at depth 3, the deepest the session tree goes, so you cannot start sessions.\n")
+    expect(tree.rolePart(0, limits)).toContain(`Load the ${kernel.SKILL_ID} skill`)
     expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)
     expect(tree.rolePart(3, limits)).not.toContain(kernel.SKILL_ID)
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Do not poll with courier_tree or sleep")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("poll")
+  })
+  test("no model-facing string says when to split a task or asks for a split line", () => {
+    const rule = /\bsplit|independent, substantial|small, sequential|tightly coupled|whole task|to keep (my|your) context|verified and integrated|run the project's checks|Check and integrate/i
+    const texts = [
+      skill.SKILL_DESCRIPTION,
+      skill.SKILL_CONTENT,
+      ...[0, 1, 2, 3].flatMap((depth) => [tree.rolePart(depth, limits), tree.rolePart(depth, limits, true)]),
+      ...[1, 2, 3].flatMap((depth) => [tree.childBrief("ses_parent", "Fix the bug", depth, limits), tree.childBrief("ses_parent", "Fix the bug", depth, limits, "courier/ses_x")]),
+      ...registered.map((tool) => tool.description as string),
+    ]
+    for (const text of texts) expect(text).not.toMatch(rule)
+    expect(Object.keys(kernel).filter((name) => /SPLIT|ONE_PART/.test(name))).toEqual([])
+  })
+  test("courier_spawn's description is the one place that says when to start a session", () => {
+    const when = "Use it only when the person, a skill or instruction of theirs, or the task you were started with asks for a session, never on your own initiative"
+    expect(registered.find((tool) => tool.name === "courier_spawn").description).toContain(when)
+    for (const text of [skill.SKILL_CONTENT, tree.rolePart(0, limits), tree.rolePart(1, limits), tree.childBrief("ses_parent", "Fix the bug", 1, limits)])
+      expect(text).not.toContain("only when")
   })
   test("refusals", () => {
     expect(tree.depthRefusal(3, 3)).toMatchSnapshot()

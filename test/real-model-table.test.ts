@@ -11,13 +11,11 @@ describe("real-model-table", () => {
     const run = parseRun(fixture("pass-a"))
     expect(run).toMatchObject({ name: "pass-a", verdict: "pass", passed: 2, total: 2, polled: 0, requests: 26, seconds: 52 })
     expect([...run.skillLoads]).toEqual([[0, 1], [1, 1]])
-    expect(run.rootSplit).toBe("split: 2 parts | numbers, count")
-    expect(run.subSplits).toEqual(["split: 2 halves"])
   })
 
   test("reads a failing run with no skill and two polled sessions", () => {
     const run = parseRun(fixture("fail-b"))
-    expect(run).toMatchObject({ verdict: "fail", passed: 1, total: 3, polled: 2, seconds: undefined, rootSplit: undefined, subSplits: [] })
+    expect(run).toMatchObject({ verdict: "fail", passed: 1, total: 3, polled: 2, seconds: undefined })
     expect(run.skillLoads.size).toBe(0)
   })
 
@@ -31,7 +29,7 @@ describe("real-model-table", () => {
     expect(out.match(/^### /gm)).toHaveLength(2)
     expect(out).toContain("### base\n")
     expect(out).toContain("### pass-a\n")
-    expect(out).toContain("| pass-a | pass | 2/2 | d0: 1, d1: 1 | 0 | 26 | 100 | 50 | 52 s | split: 2 parts \\| numbers, count | split: 2 halves |")
+    expect(out).toContain("| pass-a | pass | 2/2 | d0: 1, d1: 1 | 0 | 26 | 100 | 50 | 52 s |")
     expect(out).toContain("| fail-b | fail | 1/3 | none | 2 | 18 | - | - | - |")
     expect(out).toContain("3 run(s), 2 finished, 1 pass; mean score 1.5/2.5, 1.0 polled session(s), 22.0 requests, 100.0 cache reads/request, 50.0 uncached input tokens/request.")
   })
@@ -79,7 +77,7 @@ test("a skill load is counted from a note about a session, not from a model's te
   expect([...parseRun(dir).skillLoads]).toEqual([[0, 1]])
 })
 
-test("an older summary's recall and group notes are skipped, and its started notes still name the sub-orchestrators", () => {
+test("an older summary's recall and group notes are skipped, and so is a split line an older checker noted", () => {
   const dir = mkdtempSync(join(tmpdir(), "rmt-"))
   const notes = [
     "the root called courier_recall 1 time(s), the first in its first turn, before its split",
@@ -91,7 +89,7 @@ test("an older summary's recall and group notes are skipped, and its started not
   const run = parseRun(dir)
   expect(run).not.toHaveProperty("recalls")
   expect(run).not.toHaveProperty("groups")
-  expect(run.subSplits).toEqual(["split: 2 halves"])
+  expect(run).not.toHaveProperty("subSplits")
   expect(tables([dir])).toContain("| Run | Verdict | Score | Skill loads | Polled |")
 })
 
@@ -106,7 +104,6 @@ test("the checker still writes the notes the parser reads", () => {
   const who = '${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`}'
   for (const note of [
     "notes.push(`" + who + " loaded the skill(s): ${loads.join(\", \")}`)",
-    "notes.push(`" + who + " stated: ${decision.slice(0, 320)}`)",
     "notes.push(`" + who + " started ${spawnsOf(entry.list).length} session(s)",
     'notes.push(`polled: ${pollers.map((id) => (id === rootID ? "the root" : id)).join(", ")}`)',
     "checks: Object.fromEntries(checks)",

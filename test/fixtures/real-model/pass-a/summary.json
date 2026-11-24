@@ -6,9 +6,6 @@
   "notes": [
     "the root loaded the skill(s): courier-orchestrate",
     "session ses_num (depth 1) loaded the skill(s): courier-orchestrate",
-    "the root stated: split: 2 parts | numbers, count",
-    "session ses_num (depth 1) stated: split: 2 halves",
-    "session ses_leaf (depth 2) stated: split: no",
     "the root started 2 session(s)",
     "session ses_num (depth 1) started 2 session(s)"
   ],

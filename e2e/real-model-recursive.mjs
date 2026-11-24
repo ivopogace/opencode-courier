@@ -429,11 +429,6 @@ for (const [id, entry] of tree) {
   if (loads.length) notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} loaded the skill(s): ${loads.join(", ")}`)
 }
 if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === "skill"))) notes.push("no session loaded a skill")
-const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
-for (const [id, entry] of tree) {
-  const decision = splitLineOf((turnsOf(entry.list)[0] ?? []).filter((message) => message.type === "assistant").map(textOf).join("\n"))
-  if (decision) notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} stated: ${decision.slice(0, 320)}`)
-}
 for (const [id, entry] of orchestrators) {
   const isolated = toolsOf(entry.list).filter((part) => childOf(part) && part.state.input?.isolate).length
   notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} started ${spawnsOf(entry.list).length} session(s)${isolated ? `, ${isolated} isolated` : ""}`)

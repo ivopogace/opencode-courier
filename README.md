@@ -48,7 +48,7 @@ top session's view. Use it when a child's final answer is all you need. Courier 
 - **Parallel edits.** `isolate: true` gives a child its own git worktree and branch to merge.
 - **Asks reach you.** A standalone child's permission requests and questions come to you through
   the top session. Only you approve a request, in OpenCode's own prompt.
-- **Trees.** A child may split its part again, within limits you set, with no change to
+- **Trees.** A child may start sessions of its own, within limits you set, with no change to
   OpenCode's config.
 
 ## How it works
@@ -61,8 +61,8 @@ Each report wakes the parent as it comes. A child that fails is reported to its 
 rate or quota limit lifts. One about to end its turn without reporting is reminded once, and its
 parent is told only if it still does not report. A message that does not wake its session is shown
 as `stalled`. Children and scheduled messages survive a restart. The `courier-orchestrate` skill,
-listed in every session, tells a model when to split a task and how to check and merge the parts;
-how to plan and review them is left to your own skills. Every detail:
+listed in every session, tells a model how the tools work. A model starts a session only when you
+ask for one: when to divide a task, and how, is left to you and your own skills. Every detail:
 [the reference](docs/reference.md).
 
 ## Install

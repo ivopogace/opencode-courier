@@ -350,14 +350,14 @@ test("its context hook, with the limits from the options, leaves a child at maxD
   )
 })
 
-test("its context hook points a session nobody spawned, with no children, to the skill", async () => {
+test("its context hook adds nothing to a session nobody spawned, with no children", async () => {
   const { hooks } = await setUp()
   const event = { sessionID: "ses_alone", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
 
   await hooks.get("context")!(event)
 
   expect(Object.keys(event.tools)).toEqual(["courier_spawn", "courier_send"])
-  expect(event.system).toEqual([{ type: "text", text: rolePart(null, DEFAULT_LIMITS) }])
+  expect(event.system).toEqual([])
 })
 
 test("its context hook gives an OpenCode subagent of a courier child no role part and the four tools of a leaf (#633)", async () => {

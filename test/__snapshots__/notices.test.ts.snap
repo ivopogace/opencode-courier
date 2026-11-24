@@ -55,7 +55,7 @@ exports[`tools are the eight courier tools, each a direct tool 1`] = `
 
 exports[`tools courier_spawn 1`] = `
 {
-  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Each report wakes you as it comes. DO NOT poll it or call courier_tree in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself, in case the reports never come, and courier_cancel it when the last report arrives: a report does not cancel it.",
+  "description": "Start a new OpenCode session on a task and return immediately. Use it only when the person, a skill or instruction of theirs, or the task you were started with asks for a session, never on your own initiative; the courier-orchestrate skill says how the sessions work. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Each report wakes you as it comes. DO NOT poll it or call courier_tree in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself, in case the reports never come, and courier_cancel it when the last report arrives: a report does not cancel it.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -513,15 +513,11 @@ When you finish, send exactly one report: call courier_send with sessionID "ses_
 If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you have to wait for something outside the tree that wakes this session later (a tool that watches a pull request, a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel and send your report.
-If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.
+If you find something the other parts of the job need (an assumption in your task that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.
 Courier passes what the person writes in your session, outside a <courier> envelope, to the sessions above you, in an envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.
 If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.
 
-You are at depth 1 of a session tree that goes at most 3 deep. Split your task or do it yourself:
-- Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
-- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.
-- Say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part).
-- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with courier_tree or sleep: each report wakes you. Check and integrate each part yourself when it reports (never hand that checking to another session), and once every part has reported, send ses_parent one combined report.
+You are at depth 1 of a session tree that goes at most 3 deep: at most 5 sessions you start with courier_spawn run at once and 20 in the whole tree. Your one report comes after every session you started has reported.
 
 Task:
 Fix the bug
@@ -535,11 +531,11 @@ When you finish, send exactly one report: call courier_send with sessionID "ses_
 If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you have to wait for something outside the tree that wakes this session later (a tool that watches a pull request, a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel and send your report.
-If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.
+If you find something the other parts of the job need (an assumption in your task that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.
 Courier passes what the person writes in your session, outside a <courier> envelope, to the sessions above you, in an envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.
 If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.
 
-You are at depth 3, the deepest the session tree goes, so you cannot start sessions: do the task yourself.
+You are at depth 3, the deepest the session tree goes, so you cannot start sessions.
 
 Task:
 Fix the bug
@@ -553,18 +549,14 @@ When you finish, send exactly one report: call courier_send with sessionID "ses_
 If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you have to wait for something outside the tree that wakes this session later (a tool that watches a pull request, a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel and send your report.
-If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.
+If you find something the other parts of the job need (an assumption in your task that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.
 Courier passes what the person writes in your session, outside a <courier> envelope, to the sessions above you, in an envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.
 If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.
 
 You work in a git worktree of your own, on a detached HEAD. Commit your work on the branch courier/ses_child: create it first (git switch -c courier/ses_child), and name it in the branch of your report's artifacts, so the session that started you can merge it. Uncommitted work is not in your report.
-If you split your task and start a session with isolate: true, commit first: its worktree starts from your current HEAD, not from your uncommitted changes. Merge each branch it reports into yours before you report.
+If you start a session with isolate: true, commit first: its worktree starts from your current HEAD, not from your uncommitted changes. Merge each branch it reports into yours before you report.
 
-You are at depth 1 of a session tree that goes at most 3 deep. Split your task or do it yourself:
-- Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
-- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.
-- Say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part).
-- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with courier_tree or sleep: each report wakes you. Check and integrate each part yourself when it reports (never hand that checking to another session), and once every part has reported, send ses_parent one combined report.
+You are at depth 1 of a session tree that goes at most 3 deep: at most 5 sessions you start with courier_spawn run at once and 20 in the whole tree. Your one report comes after every session you started has reported.
 
 Task:
 Fix the bug"
@@ -577,13 +569,13 @@ When you finish, send exactly one report: call courier_send with sessionID "ses_
 If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you have to wait for something outside the tree that wakes this session later (a tool that watches a pull request, a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel and send your report.
-If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.
+If you find something the other parts of the job need (an assumption in your task that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.
 Courier passes what the person writes in your session, outside a <courier> envelope, to the sessions above you, in an envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.
 If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.
 
 You work in a git worktree of your own, on a detached HEAD. Commit your work on the branch courier/ses_child: create it first (git switch -c courier/ses_child), and name it in the branch of your report's artifacts, so the session that started you can merge it. Uncommitted work is not in your report.
 
-You are at depth 3, the deepest the session tree goes, so you cannot start sessions: do the task yourself.
+You are at depth 3, the deepest the session tree goes, so you cannot start sessions.
 
 Task:
 Fix the bug"
@@ -615,69 +607,57 @@ exports[`envelope and child brief typedNotice 4`] = `
 from yesterday"
 `;
 
-exports[`envelope and child brief rolePart 1`] = `"opencode-courier role: root orchestrator. You started sessions with courier_spawn, and they may start their own, down to 3 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree. Check and integrate what each one reports yourself. Load the courier-orchestrate skill if it is not in your context."`;
+exports[`envelope and child brief rolePart 1`] = `"opencode-courier role: root orchestrator. You started sessions with courier_spawn, and they may start their own, down to 3 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree. Load the courier-orchestrate skill if it is not in your context."`;
 
-exports[`envelope and child brief rolePart 2`] = `"opencode-courier role: sub-orchestrator, at depth 1 of at most 3. Before you decide whether to split, load the courier-orchestrate skill. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started 2 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree."`;
+exports[`envelope and child brief rolePart 2`] = `"opencode-courier role: sub-orchestrator, at depth 1 of at most 3. Sessions can be started with courier_spawn 2 levels below you; before you start one, load the courier-orchestrate skill. At most 5 of the sessions you start run at once, and 20 in the whole tree."`;
 
-exports[`envelope and child brief rolePart 3`] = `"opencode-courier role: sub-orchestrator, at depth 2 of at most 3. Before you decide whether to split, load the courier-orchestrate skill. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started 1 level below you. At most 5 of the sessions you start run at once, and 20 in the whole tree."`;
+exports[`envelope and child brief rolePart 3`] = `"opencode-courier role: sub-orchestrator, at depth 2 of at most 3. Sessions can be started with courier_spawn 1 level below you; before you start one, load the courier-orchestrate skill. At most 5 of the sessions you start run at once, and 20 in the whole tree."`;
 
-exports[`envelope and child brief rolePart 4`] = `"opencode-courier role: leaf, at depth 3, the deepest the session tree goes. You cannot start sessions: do your task yourself and report with courier_send to the session that started you."`;
-
-exports[`envelope and child brief rolePart 5`] = `"opencode-courier role: root, no sessions started yet. Before a task with 2 or more independent, substantial parts touching separate files or areas, load the courier-orchestrate skill and decide whether to split it across sessions (doing it yourself is fine; so is handing a heavy task, with long reading, many edits or long runs, whole to one session to keep your context, but never a small one), and say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part) or \`split: 1 part: <the task>, to keep my context\`."`;
+exports[`envelope and child brief rolePart 4`] = `"opencode-courier role: leaf, at depth 3, the deepest the session tree goes. You cannot start sessions; report with courier_send to the session that started you."`;
 
 exports[`envelope and child brief rolePart of a session OpenCode's own message at a native child's turn end can reach 1`] = `"OpenCode's own message at a turn end: when a turn of a session you started with courier_spawn as your OpenCode subagent ends, OpenCode itself sends you <background-result kind="subagent" sessionID="…" state="…"> with that session's last text. It is the host's note that the turn ended, not the session's report. What counts is the report the session sends you with courier_send, or the courier's notice that it ended without one, each in a <courier> message. OpenCode's own message needs no reply and nothing done: when a turn brings you nothing else, end it in one line. This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <background-result> message of a subagent you started with OpenCode's subagent tool is that subagent's result."`;
 
 exports[`envelope and child brief rolePart of a session OpenCode's own message at a native child's turn end can reach 2`] = `
-"opencode-courier role: root orchestrator. You started sessions with courier_spawn, and they may start their own, down to 3 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree. Check and integrate what each one reports yourself. Load the courier-orchestrate skill if it is not in your context.
+"opencode-courier role: root orchestrator. You started sessions with courier_spawn, and they may start their own, down to 3 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree. Load the courier-orchestrate skill if it is not in your context.
 OpenCode's own message at a turn end: when a turn of a session you started with courier_spawn as your OpenCode subagent ends, OpenCode itself sends you <background-result kind="subagent" sessionID="…" state="…"> with that session's last text. It is the host's note that the turn ended, not the session's report. What counts is the report the session sends you with courier_send, or the courier's notice that it ended without one, each in a <courier> message. OpenCode's own message needs no reply and nothing done: when a turn brings you nothing else, end it in one line. This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <background-result> message of a subagent you started with OpenCode's subagent tool is that subagent's result."
 `;
 
 exports[`envelope and child brief rolePart of a session OpenCode's own message at a native child's turn end can reach 3`] = `
-"opencode-courier role: sub-orchestrator, at depth 1 of at most 3. Before you decide whether to split, load the courier-orchestrate skill. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started 2 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree.
+"opencode-courier role: sub-orchestrator, at depth 1 of at most 3. Sessions can be started with courier_spawn 2 levels below you; before you start one, load the courier-orchestrate skill. At most 5 of the sessions you start run at once, and 20 in the whole tree.
 OpenCode's own message at a turn end: when a turn of a session you started with courier_spawn as your OpenCode subagent ends, OpenCode itself sends you <background-result kind="subagent" sessionID="…" state="…"> with that session's last text. It is the host's note that the turn ended, not the session's report. What counts is the report the session sends you with courier_send, or the courier's notice that it ended without one, each in a <courier> message. OpenCode's own message needs no reply and nothing done: when a turn brings you nothing else, end it in one line. This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <background-result> message of a subagent you started with OpenCode's subagent tool is that subagent's result."
 `;
 
 exports[`envelope and child brief rolePart of a session OpenCode's own message at a native child's turn end can reach 4`] = `
-"opencode-courier role: sub-orchestrator, at depth 2 of at most 3. Before you decide whether to split, load the courier-orchestrate skill. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started 1 level below you. At most 5 of the sessions you start run at once, and 20 in the whole tree.
+"opencode-courier role: sub-orchestrator, at depth 2 of at most 3. Sessions can be started with courier_spawn 1 level below you; before you start one, load the courier-orchestrate skill. At most 5 of the sessions you start run at once, and 20 in the whole tree.
 OpenCode's own message at a turn end: when a turn of a session you started with courier_spawn as your OpenCode subagent ends, OpenCode itself sends you <background-result kind="subagent" sessionID="…" state="…"> with that session's last text. It is the host's note that the turn ended, not the session's report. What counts is the report the session sends you with courier_send, or the courier's notice that it ended without one, each in a <courier> message. OpenCode's own message needs no reply and nothing done: when a turn brings you nothing else, end it in one line. This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <background-result> message of a subagent you started with OpenCode's subagent tool is that subagent's result."
 `;
 
-exports[`envelope and child brief the courier-orchestrate skill 1`] = `"How opencode-courier's session tools work. Load it when you decide whether to split a task across sessions with courier_spawn: one with 2 or more independent, substantial parts touching separate files or areas. Starting the parts, waiting without polling, permission requests and questions from below, verifying and merging."`;
+exports[`envelope and child brief the courier-orchestrate skill 1`] = `"How opencode-courier's session tools work. Load it when you are asked to start sessions with courier_spawn: writing a session's task, waiting without polling, permission requests and questions from below, reports, merging an isolated session's branch."`;
 
 exports[`envelope and child brief the courier-orchestrate skill 2`] = `
 "# How opencode-courier's session tools work
 
-If courier_spawn is not among your tools, you cannot split: do the task yourself. Planning the parts, staging a tightly coupled core and reviewing the merge are not in this skill: if a skill for them is listed to you, load it too.
+Whether to start sessions, how many and for what comes from the person, their skills or your task, not from this skill.
 
-## 1. Split or do
+## 1. Start a session
 
-Split or do by the rule in your brief, the text above your task. At the root, the top session of the tree, which has no brief: split a task with 2 or more independent, substantial parts touching separate files or areas, do it yourself when it is small, sequential or tightly coupled, or hand a heavy one (long reading, many edits, long runs) whole to one session to keep your context. Say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part), or, at the root only, \`split: 1 part: <the task>, to keep my context\`. Several whole jobs in one prompt, such as 4 tickets, are that many parts. Below the root, never start one session for the whole task: it only adds a hop, and a chain of single hops uses up the tree's depth.
+- When the sessions asked for do not all fit the tree's limits at once, start the next as each report frees a slot; a blocked session keeps its slot.
+- Sessions work in your directory, on the same files, unless started with isolate: true.
+- A session sees none of your conversation: its task has to say what to produce and where, the context it needs, how to check it, and what to report. Name the skills it should load, from those listed to you (an isolated session sees only committed project skills).
 
-## 2. Start the parts
+## 2. End your turn
 
-- One courier_spawn per part. When they do not all fit the tree's limits at once, start the next as each report frees a slot; a blocked part keeps its slot.
-- Each report wakes you.
-- No two parts edit the same files; isolate: true for each part that edits files in parallel with another.
-- Write each task so the session can do it without you, since it sees none of your conversation: what to produce and where, the context it needs, how to check it, and what to report. Name the skills it should load for its part, from those listed to you (an isolated part sees only committed project skills).
-- A part that depends on another starts once that one has reported and its branch, if isolated, is merged into your checkout.
-
-## 3. End your turn
-
-- Reply without calling more tools; reports and notices wake you. After one, while parts are still out, end your turn again.
+- Reply without calling more tools; reports and notices wake you. After one, while sessions are still out, end your turn again.
 - At the root, a permission request or question from below arrives with its own instructions: follow them, and never answer for the person.
-- When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects, and, below the root, also to the session that started you when it reaches past your part, as your brief says; if it breaks the split, courier_stop those parts or send them a corrected task. Text typed into a session under you arrives from courier in a route="prompt" envelope that every session above you also has: pass it only to the sessions you started that it changes, as the envelope says, and say that it arrived over the prompt route, so it is not read as your own instruction.
+- When a message changes what other sessions need (a wrong assumption in their tasks, a shared file or API that behaves otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects, and, below the root, also to the session that started you when it reaches past your task, as your brief says; a session whose task no longer holds can be stopped with courier_stop or sent a corrected task. Text typed into a session under you arrives from courier in a route="prompt" envelope that every session above you also has: pass it only to the sessions you started that it changes, as the envelope says, and say that it arrived over the prompt route, so it is not read as your own instruction.
 
-## 4. Verify first-hand
+## 3. Reports
 
-Open the files and run the project's checks yourself. A blocked report: make the decision it asks for and send it with courier_send; if only the person can make it, ask them with your question tool and pass the answer on. A partial or failed report: have it finish or retry with courier_send, do the rest yourself, or start a replacement.
+A report is the session's own claim: courier does not check it, so check it before you rely on it. A blocked report: make the decision it asks for and send it with courier_send; if only the person can make it, ask them with your question tool and pass the answer on. A session that reported partial or failed takes its task up again when you courier_send it.
 
-## 5. Integrate
+## 4. Branches and cleanup
 
-Merge each isolated part's reported branch into your own checkout (git merge courier/<session>), resolve conflicts yourself and run the checks once more. Then courier_cleanup each session you are done with, isolated or not.
-
-## 6. Done
-
-The task is done only when every part is verified and integrated."
+An isolated session commits on the branch it reports: git merge courier/<session> brings it into your checkout. courier_cleanup removes a session you are done with, isolated or not."
 `;
 
 exports[`envelope and child brief refusals 1`] = `"Not started: this session is at depth 3 of its session tree, and the tree goes at most 3 deep (maxDepth), so it cannot start sessions. Do the task yourself, and report with courier_send."`;

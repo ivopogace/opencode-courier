@@ -19,8 +19,6 @@ export type Run = {
   cacheReads?: number
   uncached?: number
   seconds?: number
-  rootSplit?: string
-  subSplits: string[]
 }
 
 const WHO = String.raw`(the root|session (ses_\w+)(?: \(depth (\d+)\))?)`
@@ -41,14 +39,7 @@ export function parseRun(dir: string): Run {
   const summary: Summary = JSON.parse(readFileSync(join(dir, "summary.json"), "utf8"))
   const checks = Object.values(summary.checks)
   const skillLoads = new Map<number, number>()
-  const subSplits: string[] = []
   let polled = 0
-  let rootSplit: string | undefined
-  const subOrchestrators = new Set<string>()
-  for (const note of summary.notes) {
-    const started = note.match(new RegExp(`^${WHO} started \\d+ session`))
-    if (started?.[2]) subOrchestrators.add(started[2])
-  }
   for (const note of summary.notes) {
     const loaded = note.match(new RegExp(`^${WHO} loaded the skill\\(s\\): (.+)$`))
     if (loaded) {
@@ -57,11 +48,6 @@ export function parseRun(dir: string): Run {
     }
     const poll = note.match(/^polled: (.+)$/)
     if (poll) polled = poll[1]!.split(", ").length
-    const stated = note.match(new RegExp(`^${WHO} stated: (.+)$`))
-    if (stated) {
-      if (stated[1] === "the root") rootSplit = stated[4]
-      else if (subOrchestrators.has(stated[2]!)) subSplits.push(stated[4]!)
-    }
   }
   const timeline = join(dir, "timeline.txt")
   return {
@@ -75,8 +61,6 @@ export function parseRun(dir: string): Run {
     ...(summary.usage.cacheRead !== undefined && summary.usage.requests > 0 ? { cacheReads: summary.usage.cacheRead / summary.usage.requests } : {}),
     ...(summary.usage.input !== undefined && summary.usage.requests > 0 ? { uncached: summary.usage.input / summary.usage.requests } : {}),
     seconds: existsSync(timeline) ? secondsOf(readFileSync(timeline, "utf8")) : undefined,
-    rootSplit,
-    subSplits,
   }
 }
 
@@ -97,16 +81,14 @@ export function conditionTable(condition: string, runs: readonly Run[]): string 
       run.cacheReads === undefined ? "-" : String(Math.round(run.cacheReads)),
       run.uncached === undefined ? "-" : String(Math.round(run.uncached)),
       run.seconds === undefined ? "-" : `${Math.round(run.seconds)} s`,
-      run.rootSplit ? cell(run.rootSplit) : "-",
-      run.subSplits.length ? run.subSplits.map(cell).join("<br>") : "-",
     ].join(" | "),
   )
   const finished = runs.filter((run) => run.verdict !== "inconclusive")
   return [
     `### ${condition}`,
     "",
-    "| Run | Verdict | Score | Skill loads | Polled | Requests | Cache reads/request | Uncached input/request | Duration | Root split | Sub-orchestrator splits |",
-    "|---|---|---|---|---|---|---|---|---|---|---|",
+    "| Run | Verdict | Score | Skill loads | Polled | Requests | Cache reads/request | Uncached input/request | Duration |",
+    "|---|---|---|---|---|---|---|---|---|",
     ...rows.map((row) => `| ${row} |`),
     "",
     `${runs.length} run(s), ${finished.length} finished, ${finished.filter((run) => run.verdict === "pass").length} pass; mean score ${mean(finished.map((run) => run.passed))}/${mean(finished.map((run) => run.total))}, ` +

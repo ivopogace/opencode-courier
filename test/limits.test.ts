@@ -7,7 +7,7 @@ import { shapeContext } from "../src/tree/context.js"
 import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, readRemovedOptions, turnEnd, type RosterEntry } from "../src/tree/domain.js"
 import { runs, turnOf } from "../src/tree/running.js"
 import type { ContextPorts, CourierPorts, LimitPorts, Role, SpawnGate } from "../src/tree/ports.js"
-import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
+import { SKILL_ID } from "../src/kernel/protocol.js"
 import { childBrief, depthRefusal, childrenRefusal, HOST_REPORTS, ROLE_KEY, ROLE_PREFIX, rolePart, STANDING_KEY, standingEntry, totalRefusal } from "../src/tree/text.js"
 import { reportOf } from "../src/tree/report.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
@@ -1032,7 +1032,7 @@ describe("spawn", () => {
         "This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <background-result> message of a subagent you started with OpenCode's subagent tool is that subagent's result.",
       )
       expect(HOST_REPORTS).not.toContain("\n")
-      for (const depth of [DEFAULT_LIMITS.maxDepth, null]) expect(rolePart(depth, DEFAULT_LIMITS, true)).toBe(rolePart(depth, DEFAULT_LIMITS))
+      expect(rolePart(DEFAULT_LIMITS.maxDepth, DEFAULT_LIMITS, true)).toBe(rolePart(DEFAULT_LIMITS.maxDepth, DEFAULT_LIMITS))
       for (const depth of [0, 1, 2]) expect(rolePart(depth, DEFAULT_LIMITS, true)).toBe(`${rolePart(depth, DEFAULT_LIMITS)}\n${HOST_REPORTS}`)
     })
   })
@@ -1225,10 +1225,10 @@ describe("the context hook", () => {
     expect(calls).toEqual(["list ses_d1"])
   })
 
-  test("reads no entries for a session nobody spawned that has started none, and points it to the skill", async () => {
+  test("reads no entries for a session nobody spawned that has started none, and adds no part", async () => {
     const { shape, calls } = contextPorts(DEFAULT_LIMITS, new Map())
 
-    expect((await shape("ses_alone")).system.at(-1)).toEqual({ type: "text", text: rolePart(null, DEFAULT_LIMITS) })
+    expect((await shape("ses_alone")).system.at(-1)).toEqual({ type: "text", text: "base" })
     expect(calls).toEqual([])
   })
 
@@ -1242,7 +1242,7 @@ describe("the context hook", () => {
     expect((await listed.shape("ses_d1", baseline(1))).system).toEqual([{ type: "text", text: baseline(1) }])
   })
 
-  test("a fork of a leaf reads as a top session: it keeps its tools, adds no part while its baseline carries the leaf's block, and takes the root's part once that is gone", async () => {
+  test("a fork of a leaf reads as a top session: it keeps its tools, adds no part while its baseline carries the leaf's block, and gets no part once that is gone", async () => {
     const limits = { ...DEFAULT_LIMITS, maxDepth: 1 }
     const { shape, child, calls, ports } = contextPorts(limits, new Map([["ses_d1", new Map([[ROLE_KEY, rolePart(1, limits)]])]]))
     await chainTo(child, 1)
@@ -1255,7 +1255,7 @@ describe("the context hook", () => {
     expect(Object.keys(original.tools)).toEqual(FOUR)
     expect(Object.keys(fork.tools)).toEqual(EIGHT)
     expect(fork.system).toEqual(original.system)
-    expect(compacted.system).toEqual([{ type: "text", text: "base" }, { type: "text", text: rolePart(null, limits) }])
+    expect(compacted.system).toEqual([{ type: "text", text: "base" }])
     expect(calls).toEqual(["list ses_d1"])
     expect(ports.roles.get("ses_fork")).toEqual({ depth: null, entry: false })
   })
@@ -1282,13 +1282,10 @@ describe("the context hook", () => {
     expect(logged).toEqual(["courier: cannot read the instruction entries of session ses_d1, so its role goes in a system part: Error: db locked"])
   })
 
-  test("points a session nobody spawned that has started none to the skill, with its tools as they are", async () => {
+  test("adds nothing to a session nobody spawned that has started none, with its tools as they are", async () => {
     const { shape } = contextPorts()
     const event = await shape("ses_alone")
-    expect(event).toEqual({ sessionID: "ses_alone", tools: tools(), system: [{ type: "text", text: "base" }, { type: "text", text: rolePart(null, DEFAULT_LIMITS) }] })
-    expect(event.system[1]!.text).toStartWith(ROLE_PREFIX)
-    expect(event.system[1]!.text).toContain(SKILL_ID)
-    expect(event.system[1]!.text).toContain(ROOT_SPLIT_LINE)
+    expect(event).toEqual({ sessionID: "ses_alone", tools: tools(), system: [{ type: "text", text: "base" }] })
   })
 
   test("points no session that cannot spawn, such as one whose agent lacks the courier tools", async () => {
@@ -1313,15 +1310,6 @@ describe("the context hook", () => {
   test("tells the root orchestrator to load the skill if it is not in its context, as the other orchestrators are told", () => {
     expect(rolePart(0, DEFAULT_LIMITS)).toEndWith(`Load the ${SKILL_ID} skill if it is not in your context.`)
     expect(rolePart(1, DEFAULT_LIMITS)).toContain(`load the ${SKILL_ID} skill`)
-    expect(rolePart(null, DEFAULT_LIMITS)).toContain(`${SKILL_ID} skill`)
-  })
-
-  test("sets each split-line form in backticks, in the root's role line and the brief", () => {
-    const forms = ["`split: no, because …; considered: <the parts you weighed>`", "`split: <n> parts: …`", "`split: 1 part: <the task>, to keep my context`"]
-    expect(rolePart(null, DEFAULT_LIMITS)).toEndWith(`${forms[0]} or ${forms[1]} (one phrase per part) or ${forms[2]}.`)
-    const brief = childBrief("ses_root", "t", 1, DEFAULT_LIMITS)
-    expect(brief).toContain(`${forms[0]} or ${forms[1]} (one phrase per part).`)
-    expect(brief).not.toContain(forms[2])
   })
 
   test("the maxChildren and maxTotal refusals say not to retry in a loop, and what still counts (#511, #525)", () => {
@@ -1383,7 +1371,7 @@ describe("the context hook", () => {
 
   test("remembers a depth, and finds a root's role once a spawn forgot it", async () => {
     const { ports, storage, shape, child } = contextPorts()
-    const pointer = { type: "text" as const, text: rolePart(null, DEFAULT_LIMITS) }
+    const pointer = { type: "text" as const, text: "base" }
     const root = { type: "text" as const, text: rolePart(0, DEFAULT_LIMITS) }
     expect((await shape("ses_root")).system.at(-1)).toEqual(pointer)
     await child("ses_root", "ses_a")
@@ -1407,9 +1395,9 @@ describe("the context hook", () => {
       return scan(input)
     }
 
-    expect((await shape("ses_alone")).system.at(-1)).toEqual({ type: "text", text: rolePart(null, DEFAULT_LIMITS) })
+    expect((await shape("ses_alone")).system.at(-1)).toEqual({ type: "text", text: "base" })
     expect(scanned).toEqual(["roster/ses_alone/"])
-    expect((await shape("ses_alone")).system).toHaveLength(2)
+    expect((await shape("ses_alone")).system).toHaveLength(1)
     expect(scanned).toEqual(["roster/ses_alone/"])
   })
 
@@ -1471,7 +1459,7 @@ describe("the context hook", () => {
 
     const before = await shape("ses_sub")
     expect(Object.keys(before.tools)).toEqual(["courier_spawn", "courier_send", "read"])
-    expect(before.system.at(-1)).toEqual({ type: "text", text: rolePart(null, DEFAULT_LIMITS) })
+    expect(before.system.at(-1)).toEqual({ type: "text", text: "base" })
     expect(ports.roles.has("ses_sub")).toBe(false)
 
     await child("ses_alone", "ses_a")
@@ -1486,7 +1474,7 @@ describe("the context hook", () => {
     parents.set("ses_x", "ses_y")
     parents.set("ses_y", "ses_x")
 
-    expect((await shape("ses_x")).system.at(-1)).toEqual({ type: "text", text: rolePart(null, DEFAULT_LIMITS) })
+    expect((await shape("ses_x")).system.at(-1)).toEqual({ type: "text", text: "base" })
   })
 
   test("logs a failed session read and leaves the request as it is", async () => {

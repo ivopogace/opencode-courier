@@ -247,7 +247,7 @@ stall.
 
 When a child's tool call needs approval, OpenCode holds it until someone answers in the child's
 session. Courier tells the top session what the child asks for. A request from any depth goes to the
-top, and only the top can answer it; a sub-orchestrator is not told of its children's requests or
+top, and only the top can answer it; a session in between is not told of its children's requests or
 questions.
 
 The top session's model cannot approve. It proposes an answer with

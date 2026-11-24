@@ -80,7 +80,7 @@ describe("the fork hook", () => {
 
   test("a fork of a parent loses its role and standing entries and is told the children report to the original", async () => {
     const { ports, calls, sent } = forkPorts({
-      entries: { [ROLE_KEY]: "opencode-courier role: root orchestrator", [STANDING_KEY]: "opencode-courier standing: …" },
+      entries: { [ROLE_KEY]: "opencode-courier role: top of the session tree", [STANDING_KEY]: "opencode-courier standing: …" },
       stored: { "roster/ses_orig/ses_kid": child, "roster-by-child/ses_kid": { ancestors: ["ses_orig"] } },
     })
 
@@ -93,7 +93,7 @@ describe("the fork hook", () => {
     expect(sent[0].text).not.toContain("The brief above")
   })
 
-  test("a fork of a sub-orchestrator is told both, and a parent is known by its roster alone", async () => {
+  test("a fork of a session in between is told both, and a parent is known by its roster alone", async () => {
     const both = forkPorts({ metadata: { courier: { parentID: "ses_parent" } }, entries: { [ROLE_KEY]: "r", [STANDING_KEY]: "s" } })
     const roster = forkPorts({ instructions: false, stored: { "roster/ses_orig/ses_kid": child } })
 

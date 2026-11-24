@@ -807,13 +807,13 @@ run_depth() {
   check "the model saw no courier_spawn in a leaf's tool list unless the probe put it back" \
     "$(jq -sr --argjson leaves "$leaves" '[.[] | select((.session | IN($leaves[])) and (.tools | length > 0))] | group_by(.session)
       | map(any(.tools | index("courier_spawn"))) | sort == [false, true]' "$WORK/model.log")"
-  check "the child in between is a sub-orchestrator, with all eight tools" \
-    "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")) and '"$ALL_TOOLS"')' "$WORK/model.log")"
+  check "the child in between is named by its depth, with all eight tools" \
+    "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "depth" and (.tools | index("courier_spawn")) and '"$ALL_TOOLS"')' "$WORK/model.log")"
   check "the root had all eight tools on every request, before its first spawn and after (#633)" \
     "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0))] | length > 1 and all('"$ALL_TOOLS"')' "$WORK/model.log")"
-  check "the root had no role line until it had started a child, then was named root orchestrator" \
-    "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | index("root orchestrator") as $i
-      | $i > 0 and (.[:$i] | all(. == null)) and (.[$i:] | all(. == "root orchestrator"))' "$WORK/model.log")"
+  check "the root had no role line until it had started a child, then was named the top of the tree" \
+    "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | index("top") as $i
+      | $i > 0 and (.[:$i] | all(. == null)) and (.[$i:] | all(. == "top"))' "$WORK/model.log")"
   check "a leaf that has reported reads as finished and owes no report, so it no longer counts against the limits" \
     "$(for _ in $(seq 1 30); do leaf=$(jq -r '.[0]' <<<"$leaves"); [ "$(finished "$leaf")" = true ] && [ "$(reported "$leaf")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
   leaf=$(jq -r '.[0]' <<<"$leaves")
@@ -842,9 +842,9 @@ run_role_entry() {
   check "the middle session's report woke the root" "$(has_text "$role_root" "ROOT WOKE" 90)"
   role_leaf=$(texts "$role_mid" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
   check "the middle session started a leaf" "$([ -n "$role_leaf" ] && echo true || echo false)"
-  check "each session's role entry names its role: root orchestrator, sub-orchestrator at depth 1, leaf at depth 2" \
-    "$([[ $(role_entry_of "$role_root") == "opencode-courier role: root orchestrator"* &&
-      $(role_entry_of "$role_mid") == "opencode-courier role: sub-orchestrator, at depth 1 of at most 2"* &&
+  check "each session's role entry names its place: the top of the tree, depth 1, leaf at depth 2" \
+    "$([[ $(role_entry_of "$role_root") == "opencode-courier role: top of the session tree"* &&
+      $(role_entry_of "$role_mid") == "opencode-courier role: depth 1 of at most 2"* &&
       $(role_entry_of "$role_leaf") == "opencode-courier role: leaf, at depth 2"* ]] && echo true || echo false)"
   check "every request of the middle session and the leaf carried the role in the entry's block, none in a part of the hook's" \
     "$(jq -sr --arg mid "$role_mid" --arg leaf "$role_leaf" '[.[] | select((.session == $mid or .session == $leaf) and (.tools | length > 0))]
@@ -853,9 +853,9 @@ run_role_entry() {
     "$(jq -sr --arg leaf "$role_leaf" '[.[] | select(.session == $leaf and (.tools | length > 0))]
       | length > 0 and all(.role == "leaf" and '"$LEAF_TOOLS"')' "$WORK/model.log" |
       grep -qx true && jq -sr --arg leaf "$role_leaf" '[.[] | select(.type == "probe.context" and .sessionID == $leaf)] | length > 0 and all(.role == "leaf")' "$WORK/probe.log" | grep -qx true && echo true || echo false)"
-  check "the root had no role line, in a part or an entry, until it had started a child, then was named root orchestrator by its entry alone" \
-    "$(jq -sr --arg root "$role_root" '[.[] | select(.session == $root and (.tools | length > 0))] | (map(.role) | index("root orchestrator")) as $i
-      | $i > 0 and (.[:$i] | all(.role == null and (.rolePart | not) and (.roleEntry | not))) and (.[$i:] | all(.role == "root orchestrator" and .roleEntry and (.rolePart | not)))' "$WORK/model.log")"
+  check "the root had no role line, in a part or an entry, until it had started a child, then was named the top of the tree by its entry alone" \
+    "$(jq -sr --arg root "$role_root" '[.[] | select(.session == $root and (.tools | length > 0))] | (map(.role) | index("top")) as $i
+      | $i > 0 and (.[:$i] | all(.role == null and (.rolePart | not) and (.roleEntry | not))) and (.[$i:] | all(.role == "top" and .roleEntry and (.rolePart | not)))' "$WORK/model.log")"
   echo "  instruction updates in the root's transcript: $(instruction_updates "$role_root")"
   check "the root's transcript shows its entries' arrival as system messages, Instructions updated: api/…, one naming the role" \
     "$(instruction_updates "$role_root" | jq -r 'length >= 1 and any(contains("api/role"))')"
@@ -883,7 +883,7 @@ run_fork() {
   turn_ended "$fork_mid"
   turn_ended "$fork_leaf"
   check "before the fork the middle session holds its role and standing entries, and the leaf its role" \
-    "$([[ $(entry_of "$fork_mid" role) == "opencode-courier role: sub-orchestrator"* && $(entry_of "$fork_mid" standing) == "opencode-courier standing:"* &&
+    "$([[ $(entry_of "$fork_mid" role) == "opencode-courier role: depth "* && $(entry_of "$fork_mid" standing) == "opencode-courier standing:"* &&
       $(entry_of "$fork_leaf" role) == "opencode-courier role: leaf"* ]] && echo true || echo false)"
   root_before=$(api "session/$fork_root/message" | jq -c '[.data[].id]')
   mid_before=$(api "session/$fork_mid/message" | jq -c '[.data[].id]')
@@ -897,7 +897,7 @@ run_fork() {
   check "the leaf's fork holds no role entry and the middle session's fork neither role nor standing, while the originals keep theirs" \
     "$(for _ in $(seq 1 20); do
       [ -z "$(entry_of "$leaf_fork" role)$(entry_of "$mid_fork" role)$(entry_of "$mid_fork" standing)" ] &&
-        [[ $(entry_of "$fork_leaf" role) == "opencode-courier role: leaf"* && $(entry_of "$fork_mid" role) == "opencode-courier role: sub-orchestrator"* &&
+        [[ $(entry_of "$fork_leaf" role) == "opencode-courier role: leaf"* && $(entry_of "$fork_mid" role) == "opencode-courier role: depth "* &&
           $(entry_of "$fork_mid" standing) == "opencode-courier standing:"* ]] && { echo true; exit; }
       sleep 1
     done; echo false)"
@@ -957,7 +957,7 @@ run_entries() {
   check "courier_cleanup dropped the first child, and the standing lists the second alone" \
     "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "forgotten"' <<<"$cleaned" | grep -qx true && standing=$(entry_of "$parent" standing) && [[ $standing == *"- $second "* && $standing != *"- $first "* ]] && echo true || echo false)"
   prompt_in "$parent" "COURIER-CLEANUP $second" >/dev/null
-  check "dropping the last one removed the standing entry" "$([ -z "$(entry_of "$parent" standing)" ] && [[ $(entry_of "$parent" role) == "opencode-courier role: root orchestrator"* ]] && echo true || echo false)"
+  check "dropping the last one removed the standing entry" "$([ -z "$(entry_of "$parent" standing)" ] && [[ $(entry_of "$parent" role) == "opencode-courier role: top of the session tree"* ]] && echo true || echo false)"
   check "the parent and its children were given no lessons entry" "$(for id in "$parent" "$first" "$second"; do [ -z "$(entry_of "$id" lessons)" ] || { echo false; exit; }; done; echo true)"
   child_delay 0
 }
@@ -1832,7 +1832,7 @@ run_subagent_role() {
       | length > 0 and all(.role == null and (.rolePart | not) and (.roleEntry | not) and '"$LEAF_TOOLS"')' "$WORK/model.log" |
       grep -qx true && jq -sr --arg sub "$sub" '[.[] | select(.type == "probe.context" and .sessionID == $sub)] | length > 0 and all(.role == null and '"$LEAF_TOOLS"')' "$WORK/probe.log" | grep -qx true && echo true || echo false)"
   check "the child kept its role and all eight tools" \
-    "$(jq -sr --arg child "$child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")) and '"$ALL_TOOLS"')' "$WORK/model.log")"
+    "$(jq -sr --arg child "$child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and all(.role == "depth" and (.tools | index("courier_spawn")) and '"$ALL_TOOLS"')' "$WORK/model.log")"
 }
 
 run_archive() {
@@ -2261,7 +2261,7 @@ run_spawn_native() {
   check "OpenCode lists only the subagent under the parent" \
     "$(api "session?parentID=$parent" | jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '[.data[].id] | index($native) != null and index($plain) == null')"
   check "the parent's role entry says what OpenCode's own message at the subagent's turn end is, and neither child's does" \
-    "$([[ $(role_entry_of "$parent") == "opencode-courier role: root orchestrator"*$'\n'"OpenCode's own message at a turn end:"* ]] &&
+    "$([[ $(role_entry_of "$parent") == "opencode-courier role: top of the session tree"*$'\n'"OpenCode's own message at a turn end:"* ]] &&
       [[ $(role_entry_of "$mixed_native")$(role_entry_of "$mixed_plain") != *"OpenCode's own message at a turn end:"* ]] && echo true || echo false)"
   check "the roster records the subagent as native and the other not, neither with a group" \
     "$([ "$(kv get "roster/$parent/$mixed_native" | jq -r '.native == true and .isolated == false and (has("group") | not)')" = true ] &&
@@ -2334,7 +2334,7 @@ run_native() {
     "$(for _ in $(seq 1 30); do jq -sre --arg parent "$native_parent" '[.[] | select(.session == $parent and (.tools | length > 0))] | (map(.hostReports | length > 0) | index(true)) as $i
       | $i != null and $i > 0 and (.[:$i] | all(.hostReports == [])) and (.[$i].hostReports as $first | ($first | length == 1) and (.[$i:] | all(.hostReports == $first) and any(.hostMessage)))' "$WORK/model.log" >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
   check "the parent's role entry holds it, and the child's, which started no native child of its own, does not" \
-    "$([[ $(role_entry_of "$native_parent") == "opencode-courier role: root orchestrator"*$'\n'"OpenCode's own message at a turn end:"* ]] &&
+    "$([[ $(role_entry_of "$native_parent") == "opencode-courier role: top of the session tree"*$'\n'"OpenCode's own message at a turn end:"* ]] &&
       jq -sr --arg child "$native_child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and all(.roleEntry) and all(.hostReports == [])' "$WORK/model.log" | grep -qx true && echo true || echo false)"
 
   scenario "a native child does not run on its parent's session rules; its request is answered in OpenCode's own prompt"

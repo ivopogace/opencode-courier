@@ -646,7 +646,7 @@ createServer((request, response) => {
     const session = request.headers["x-opencode-session-id"]
     const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")
     const everything = (body.messages ?? []).map((message) => textOf(message.content)).join("\n")
-    const role = (system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/) ?? everything.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/))?.[1] ?? null
+    const role = (system.match(/opencode-courier role: (top|depth|leaf)/) ?? everything.match(/opencode-courier role: (top|depth|leaf)/))?.[1] ?? null
     const roleEntry = /(<|&lt;)context key="role"(>|&gt;)\n\s*opencode-courier role:/.test(everything)
     const rolePart = (system.match(/^opencode-courier role:/gm) ?? []).length > (system.match(/<context key="role">\n\s*opencode-courier role:/g) ?? []).length
     const updateRole = (body.messages ?? []).find(isInstructionUpdate)?.role ?? null

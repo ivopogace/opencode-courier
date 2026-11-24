@@ -86,13 +86,13 @@ function roleLine(depth: number, limits: Limits) {
   const budget = `At most ${maxChildren} of the sessions you start run at once, and ${maxTotal} in the whole tree.`
   if (depth === 0)
     return (
-      `${ROLE_PREFIX} root orchestrator. You started sessions with courier_spawn, and they may start their own, ` +
+      `${ROLE_PREFIX} top of the session tree. You started sessions with courier_spawn, and they may start their own, ` +
       `down to ${maxDepth} levels below you. ${budget} ` +
       `Load the ${SKILL_ID} skill if it is not in your context.`
     )
   if (depth < maxDepth)
     return (
-      `${ROLE_PREFIX} sub-orchestrator, at depth ${depth} of at most ${maxDepth}. Sessions can be started with courier_spawn ${count(maxDepth - depth, "level")} below you; ` +
+      `${ROLE_PREFIX} depth ${depth} of at most ${maxDepth}. Sessions can be started with courier_spawn ${count(maxDepth - depth, "level")} below you; ` +
       `before you start one, load the ${SKILL_ID} skill. ${budget}`
     )
   return (

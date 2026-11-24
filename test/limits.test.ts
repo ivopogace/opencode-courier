@@ -938,7 +938,7 @@ describe("spawn", () => {
     expect(roles.get("ses_root")).toEqual({ depth: 0, entry: true })
   })
 
-  test("a sub-orchestrator's spawn writes only the child's entry, and forgets the parent's role", async () => {
+  test("a spawn by a session in between writes only the child's entry, and forgets the parent's role", async () => {
     const entries = new Map<string, Map<string, unknown>>()
     const { courier, calls, roles, child } = spawnPorts(DEFAULT_LIMITS, entries)
     await child("ses_root", "ses_a")
@@ -1014,7 +1014,7 @@ describe("spawn", () => {
       }
     })
 
-    test("a sub-orchestrator's native child renews the sub-orchestrator's entry at its own depth", async () => {
+    test("the native child of a session in between renews that session's entry at its own depth", async () => {
       const entries = new Map<string, Map<string, unknown>>()
       const { courier, calls, roles, child } = spawnPorts(DEFAULT_LIMITS, entries)
       await child("ses_root", "ses_a")
@@ -1297,7 +1297,7 @@ describe("the context hook", () => {
     expect(event).toEqual({ sessionID: "ses_alone", tools: { courier_send: {}, read: {} }, system: [{ type: "text", text: "base" }] })
   })
 
-  test("names the role per depth: root orchestrator, sub-orchestrator, leaf", async () => {
+  test("names the place per depth: the top of the tree, a depth, leaf", async () => {
     const { shape, child } = contextPorts()
     await chainTo(child, 3)
 
@@ -1307,7 +1307,7 @@ describe("the context hook", () => {
     }
   })
 
-  test("tells the root orchestrator to load the skill if it is not in its context, as the other orchestrators are told", () => {
+  test("tells the top session to load the skill if it is not in its context, as a session in between is told", () => {
     expect(rolePart(0, DEFAULT_LIMITS)).toEndWith(`Load the ${SKILL_ID} skill if it is not in your context.`)
     expect(rolePart(1, DEFAULT_LIMITS)).toContain(`load the ${SKILL_ID} skill`)
   })

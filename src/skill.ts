@@ -30,9 +30,10 @@ export const SKILL_CONTENT = [
     "otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects, and, below " +
     "the root, also to the session that started you when it reaches past your task, as your brief says; a session " +
     "whose task no longer holds can be stopped with courier_stop or sent a corrected task. Text typed into a session under you arrives from " +
-    "courier in a route=\"prompt\" envelope that every session above you also has: pass it only to the sessions you " +
-    "started that it changes, as the envelope says, and say that it arrived over the prompt route, so it is not read " +
-    "as your own instruction.",
+    "courier in a route=\"prompt\" envelope that every session above you also has, and stands as the person's until the " +
+    "person says otherwise: pass it only to the sessions you started that it changes, saying that it arrived over the " +
+    "prompt route, so it is not read as your own instruction. If you think it breaks the job, ask the person instead " +
+    "of overruling it.",
   "",
   "## 3. Reports",
   "",

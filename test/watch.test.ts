@@ -1254,7 +1254,7 @@ describe("the fan-up of text typed into a spawned session", () => {
       await children.prompted("ses_leaf", 100)
       await handle(item("msg_1", "Please analyze this codebase and create an AGENTS.md file"))
       await handle(taken("msg_1"))
-      expect(sent[1].text).toContain("over the prompt route: courier did not send it and cannot tell who did")
+      expect(sent[1].text).toContain("arrived in the prompt of session ses_leaf")
       expect(sent[1].text).toContain("Please analyze this codebase")
     })
 

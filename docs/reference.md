@@ -335,14 +335,14 @@ told it did not report.
 
 You steer a running tree by talking to any session in it. In the `/courier tree` panel
 ([In the terminal](#in-the-terminal)), `enter` opens any session, and what you type goes to it like
-in any chat. A running session takes it into its current turn. Courier passes the text on to every
-session above it, so the tree's top sees it too, and a parent with the skill passes it to the parts
-it changes.
+in any chat. A running session takes it into its current turn, and it stands as yours until you say
+otherwise. Courier passes it to every session above: a parent passes it to the parts it changes, and
+one that thinks it breaks the job asks you instead of overruling it.
 
 **What is passed.** Only the text, cut at 4000 characters: files, agents and skills attached to it
-stay behind. Courier cannot tell who wrote a prompt, so it passes any prompt that arrives as text: what
-you type in the TUI or send with `opencode run --session` or the API, a slash command's whole
-template, the typed part of a prompt with a skill attached. The TUI's `!` shell commands, courier's
+stay behind. Courier passes any prompt that arrives as text, whoever wrote it: what you type in the
+TUI or send with `opencode run --session` or the API, a slash command's whole template, the typed
+part of a prompt with a skill attached. The TUI's `!` shell commands, courier's
 own messages and OpenCode's automations are not passed.
 
 **When.** The text is passed only while the tree is at work: a session under the top is running or
@@ -350,7 +350,7 @@ own messages and OpenCode's automations are not passed.
 session's turn is running. Once the top has ended its turn and every session has reported, text you
 type into a session under it stays there.
 
-The sessions above get it as progress, not a prompt, so they owe no report for it.
+The sessions above get it as progress, so they owe no report for it.
 
 **Other ways to reach the tree.** `courier_send` without a `status` is an ordinary message, so a
 parent can pass a finding on to its other children. A `status` on a message to a session below the

@@ -1307,7 +1307,7 @@ run_skill() {
   check "the skill tool named skill://courier-orchestrate as the skill's base directory" \
     "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | contains("Base directory for this skill: skill://courier-orchestrate\n"))')"
   check "a read of skill://courier-orchestrate/SKILL.md, the directory it was told about, served the skill's text" \
-    "$(tool_state read <<<"$out" | jq -r '.status == "completed" and (.input.path == "skill://courier-orchestrate/SKILL.md") and (.output | contains("Below the root, never start one session for the whole task"))')"
+    "$(tool_state read <<<"$out" | jq -r '.status == "completed" and (.input.path == "skill://courier-orchestrate/SKILL.md") and (.output | contains("A report is the session'"'"'s own claim: courier does not check it"))')"
 
   scenario "a config that still sets the memory option loads, logs one line for it, and offers no memory tool and no lessons entry"
   check "the server log has the line for the memory option, and no line reading the option as a setting" \

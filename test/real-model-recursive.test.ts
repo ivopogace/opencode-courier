@@ -654,7 +654,7 @@ describe("the recursive checker and a sub-orchestrator that reports in the turn 
   })
 })
 
-function reworkRun(variant: "corrected" | "on-reminder" | "no-child-report" | "after-partial"): Run {
+function reworkRun(variant: "corrected" | "on-reminder" | "failed-on-reminder" | "no-child-report" | "after-partial"): Run {
   const tree = transcripts("no-fault")
   const num = tree.ses_num!
   if (variant === "after-partial") {
@@ -662,11 +662,13 @@ function reworkRun(variant: "corrected" | "on-reminder" | "no-child-report" | "a
     upward.content = [send("ses_root", "391; b is being rechecked", "partial")]
   }
   num.push(step("tool-calls", send("ses_b", "Recheck numbers/b.txt.")), step("stop", say("Sent b back.")), idle())
-  if (variant !== "no-child-report") num.push(report("ses_b", "done", "Rechecked numbers/b.txt: 1024."))
-  if (variant === "on-reminder") num.push(step("stop", say("Noted.")), synthetic('<courier from="courier" reminder="report">\nReport to ses_root.\n</courier>'))
-  num.push(step("tool-calls", send("ses_root", "391 and 1024, b rechecked", "done")), step("stop", say("Reported the correction.")), idle())
+  const failed = variant === "failed-on-reminder"
+  if (variant !== "no-child-report") num.push(failed ? report("ses_b", "failed", "The recheck of numbers/b.txt failed.") : report("ses_b", "done", "Rechecked numbers/b.txt: 1024."))
+  if (variant === "on-reminder" || failed) num.push(step("stop", say("Noted.")), synthetic('<courier from="courier" reminder="report">\nReport to ses_root.\n</courier>'))
+  const correction = failed ? "partial" : "done"
+  num.push(step("tool-calls", send("ses_root", "391 and 1024, b rechecked", correction)), step("stop", say("Reported the correction.")), idle())
   const root = tree.ses_root!
-  root.splice(root.length - 3, 0, report("ses_num", "done", "391 and 1024, b rechecked"))
+  root.splice(root.length - 3, 0, report("ses_num", correction, "391 and 1024, b rechecked"))
   if (variant === "after-partial") root.splice(root.indexOf(root.find((message) => (message.text as string | undefined)?.includes('from="ses_num" status="done"'))!), 1, report("ses_num", "partial", "391; b is being rechecked"))
   return { tree, files: FILES }
 }
@@ -677,8 +679,11 @@ describe("the recursive checker and a corrected report upward", () => {
     expect(run.failed).toEqual([])
     expect(run.notes).toContain("session ses_num reported 2 times")
   })
-  test("a second report upward on courier's reminder fails", () => {
+  test("a second report upward on courier's reminder after a child's later done fails", () => {
     expect(check(reworkRun("on-reminder")).failed).toEqual([UPWARD])
+  })
+  test("a correction upward on courier's reminder after a child's later failed report passes", () => {
+    expect(check(reworkRun("failed-on-reminder")).failed).toEqual([])
   })
   test("a second report upward with no later report from a child before it fails", () => {
     expect(check(reworkRun("no-child-report")).failed).toEqual([UPWARD])

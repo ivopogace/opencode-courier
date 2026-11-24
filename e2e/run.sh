@@ -234,7 +234,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:8 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:16 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:8 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:16 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:34 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -577,7 +577,7 @@ run_reminder() {
 }
 
 run_early_report() {
-  scenario "a child whose children report in the turn that started them reports then, and owes nothing when its own child's status-less message arrives after"
+  scenario "a child whose children report in the turn that started them reports then, and owes nothing when its own child's message or later done arrives after, but owes one after its later failed"
   out=$(prompt "COURIER-EARLY-REPORT")
   root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -599,6 +599,14 @@ run_early_report() {
     ([.data[] | select(.type == "synthetic") | .text | select(contains(" reminder=\"report\""))] | length == 0) and
     ([.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send" and .state.input.sessionID == $root)] | length == 1)')"
   check "the child's message was not taken for a prompt" "$(kv get "report/$middle/prompt" | jq -r --argjson prompt "$prompt_at" '.at == $prompt')"
+  api_post "session/$middle/synthetic" "$(jq -nc --arg text "<courier from=\"$grandchild\" status=\"done\">GRANDCHILD-REPEATS-DONE</courier>" --arg from "$grandchild" \
+    '{text: $text, description: ("Message from " + $from), metadata: {source: "courier", from: $from, status: "done"}, delivery: "steer"}')" >/dev/null
+  check "its own child's later report with a status reached it after, in a turn of its own" "$([ -n "$(reply_time "$middle" "MID SAW REPEATED REPORT" 30)" ] && echo true || echo false)"
+  turn_ended "$middle"
+  check "that turn ended without a report reminder or a second report" "$(api "session/$middle/message" | jq -r --arg root "$root" '
+    ([.data[] | select(.type == "synthetic") | .text | select(contains(" reminder=\"report\""))] | length == 0) and
+    ([.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send" and .state.input.sessionID == $root)] | length == 1)')"
+  check "the child's report was not taken for a prompt" "$(kv get "report/$middle/prompt" | jq -r --argjson prompt "$prompt_at" '.at == $prompt')"
   api_post "session/$middle/synthetic" "$(jq -nc --arg text "<courier from=\"$root\">CHILD-REPORT-NOW</courier>" --arg from "$root" \
     '{text: $text, description: ("Message from " + $from), metadata: {source: "courier", from: $from}, delivery: "steer"}')" >/dev/null
   moved=$(for _ in $(seq 1 60); do
@@ -609,6 +617,14 @@ run_early_report() {
   check "the ends of those turns told the root nothing" "$([ -z "$(kv get "report/$middle/told")" ] && echo true || echo false)"
   check "the root's next message from it is the report that message asked for, with no notice of a silent end before it" \
     "$([ "$(has_text "$root" "CHILD DONE AFTER NUDGE" 30)" = true ] && notices_with "$root" ended | jq -r 'length == 0')"
+  api_post "session/$middle/synthetic" "$(jq -nc --arg text "<courier from=\"$grandchild\" status=\"failed\">GRANDCHILD-FAILS-LATER</courier>" --arg from "$grandchild" \
+    '{text: $text, description: ("Message from " + $from), metadata: {source: "courier", from: $from, status: "failed"}, delivery: "steer"}')" >/dev/null
+  check "its own child's later failed report reached it after its report, in a turn of its own" "$([ -n "$(reply_time "$middle" "MID SAW FAILED REPORT" 30)" ] && echo true || echo false)"
+  reminded=$(for _ in $(seq 1 60); do
+    [ "$(api "session/$middle/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" reminder=\"report\""))] | length == 1')" = true ] && { echo true; exit; }
+    sleep 0.5
+  done; echo false)
+  check "that report made it owe one again, so the turn's end brought a report reminder" "$reminded"
 }
 
 run_own_checkin() {

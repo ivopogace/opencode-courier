@@ -620,14 +620,14 @@ describe("a deleted session", () => {
 })
 
 describe("what makes a child owe a report", () => {
-  async function afterReport(events: unknown[]) {
+  async function afterReport(events: unknown[], reported: "done" | "blocked" = "done") {
     const watching = new AbortController()
     const { ports, sent } = fakePorts([events])
     ;(ports as any).log = () => watching.abort()
     await childStore(ports.storage).record(child())
     await childStore(ports.storage).record({ ...child("ses_child"), sessionID: "ses_grandchild" })
     await notePrompt(ports, delivered("evt_d0", 100))
-    await sendFrom(ports, "ses_child", "ses_parent", 150)
+    await sendFrom(ports, "ses_child", "ses_parent", 150, reported)
     await watchChildren(ports, fresh(), watching.signal, 1)
     return sent
   }
@@ -654,7 +654,7 @@ describe("what makes a child owe a report", () => {
     expect(await afterReport(parents)).toHaveLength(1)
   })
 
-  test("its own child's status-less message delivered after it reported does not, but its parent's or the child's status does", async () => {
+  test("its own child's message without a status or with done, delivered after it reported, does not; its parent's, another session's or its child's failed, partial or blocked does", async () => {
     const from = (sender: string, extra = {}) => [
       enqueued("evt_e", "inb_1", "synthetic", "ses_child", { source: "courier", from: sender, ...extra }),
       delivered("evt_d", 160, "ses_child", "inb_1"),
@@ -663,18 +663,25 @@ describe("what makes a child owe a report", () => {
     expect(await afterReport(from("ses_grandchild"))).toEqual([])
     expect(await afterReport(from("ses_parent"))).toHaveLength(1)
     expect(await afterReport(from("ses_other"))).toHaveLength(1)
-    expect(await afterReport(from("ses_grandchild", { status: "done" }))).toHaveLength(1)
+    expect(await afterReport(from("ses_grandchild", { status: "done" }))).toEqual([])
+    expect(await afterReport(from("ses_grandchild", { status: "failed" }))).toHaveLength(1)
+    expect(await afterReport(from("ses_grandchild", { status: "partial" }))).toHaveLength(1)
+    expect(await afterReport(from("ses_grandchild", { status: "blocked" }))).toHaveLength(1)
+    expect(await afterReport(from("ses_grandchild", { status: "done" }), "blocked")).toHaveLength(1)
+    expect(await afterReport(from("ses_grandchild"), "blocked")).toHaveLength(1)
     expect(await afterReport(from("ses_grandchild", { failed: true }))).toHaveLength(1)
   })
 
-  test("its own child's status-less message delivered before it reported does, the report still owed", async () => {
+  test("its own child's message without a status or with done, delivered before it reported, does, the report still owed", async () => {
     const { ports } = fakePorts()
     await childStore(ports.storage).record(child())
     await childStore(ports.storage).record({ ...child("ses_child"), sessionID: "ses_grandchild" })
     const inbox = new Map<string, string>()
     await notePrompt(ports, delivered("evt_d0", 100))
     await noteEnqueued(ports, inbox, enqueued("evt_e", "inb_1", "synthetic", "ses_child", { source: "courier", from: "ses_grandchild" }))
+    await noteEnqueued(ports, inbox, enqueued("evt_e2", "inb_2", "synthetic", "ses_child", { source: "courier", from: "ses_grandchild", status: "done" }))
     expect(await notePrompt(ports, delivered("evt_d", 160, "ses_child", "inb_1"), inbox)).toBe(true)
+    expect(await notePrompt(ports, delivered("evt_d2", 170, "ses_child", "inb_2"), inbox)).toBe(true)
     expect(await owesReport(ports.storage, "ses_child")).toBe(true)
   })
 

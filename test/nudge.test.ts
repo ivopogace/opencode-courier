@@ -122,6 +122,31 @@ describe("nudgeSilent", () => {
     expect(await nudgeSilent(parents.ports, new Set(), outside, idle())).toBe(true)
   })
 
+  test("leaves a child that reported before its own child's later report with a status, but reminds one that reported blocked", async () => {
+    const enqueued = (inboxID: string) => ({
+      data: { sessionID: "ses_child", inboxID, item: { type: "synthetic", payload: { metadata: { source: "courier", from: "ses_grandchild", status: "done" } } } },
+    })
+    const reported = async (status: "done" | "blocked") => {
+      const fake = await prompted()
+      await childStore(fake.ports.storage).record({ ...child("ses_child"), sessionID: "ses_grandchild" })
+      const courier = { session: { synthetic: async () => ({ id: "msg_r" }) }, storage: fake.ports.storage, now: () => 150 } as unknown as CourierPorts
+      await send(courier, "ses_child", { sessionID: "ses_parent", message: status, status })
+      return fake
+    }
+    const inbox = new Map<string, string>()
+
+    const done = await reported("done")
+    await noteEnqueued(done.ports, inbox, enqueued("inb_1"))
+    expect(await notePrompt(done.ports, delivered("evt_m", 200, "inb_1"), inbox)).toBe(false)
+    expect(await nudgeSilent(done.ports, new Set(), outside, idle())).toBe(false)
+    expect(done.sent).toEqual([])
+
+    const blocked = await reported("blocked")
+    await noteEnqueued(blocked.ports, inbox, enqueued("inb_2"))
+    expect(await notePrompt(blocked.ports, delivered("evt_m", 200, "inb_2"), inbox)).toBe(true)
+    expect(await nudgeSilent(blocked.ports, new Set(), outside, idle())).toBe(true)
+  })
+
   test("leaves a child that reported before OpenCode's report of its own native child, but reminds one a subagent's report reached", async () => {
     const enqueued = (inboxID: string, childID: string) => ({
       data: { sessionID: "ses_child", inboxID, item: { type: "synthetic", payload: { metadata: { source: "subagent", childID, agent: "subagent", state: "completed" } } } },

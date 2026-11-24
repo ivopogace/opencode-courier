@@ -222,8 +222,8 @@ a [check-in](#check-ins) is for.
 
 A spawned session owes its parent a report from the moment a task or message reaches it until it
 reports with a status, or its turn fails or is interrupted. What you type in the child's own session
-does not make it owe one, nor does a progress message from one of its own children or its own
-check-in firing after it has reported.
+does not make it owe one, nor does a message or report from one of its own children or its own
+check-in after it has reported.
 
 Before it goes idle owing a report, the child is reminded once, in the same turn, and the parent is
 not woken. If it still ends its turn without a report, the parent gets a message saying so, with the

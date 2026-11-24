@@ -28,8 +28,9 @@ export function childBrief(parentID: string, task: string, depth: number, limits
       "that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes " +
       "it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own " +
       "part. Progress alone is not worth a message.",
-    "Courier passes what the person writes in your session, outside a <courier> envelope, to the sessions above you, in an " +
-      'envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.',
+    "Text typed into your session after this brief, outside a <courier> envelope, stands as the person's until the person says " +
+      "otherwise. Courier passes it to " +
+      'the sessions above you, in an envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.',
     "If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.",
     "",
     ...(branch ? [...isolationRule(branch, depth < limits.maxDepth), ""] : []),
@@ -379,9 +380,10 @@ function clock(at: number, from: number) {
 export function typedNotice(sessionID: string, title: string | undefined, at: number, now: number, text: string) {
   const named = title === undefined ? "" : ` ("${title}")`
   return [
-    `At ${clock(at, now)} this text arrived in session ${sessionID}${named}, a session under yours, over the prompt route: courier did ` +
-      "not send it and cannot tell who did, whether the person, a client, a session above it through OpenCode's subagent tool, or a shell " +
-      `with the server's password. Courier passes it on as written. ${sessionID} has the text and acts on it. It decides what the text means for its part. Where the text ` +
+    `At ${clock(at, now)} this text arrived in the prompt of session ${sessionID}${named}, a session under yours, not through courier, ` +
+      "which passes it on as written. It stands as the person's until they say otherwise: " +
+      `${sessionID} acts on it and decides what it means for its part. If you think it breaks the job, ask the person with your ` +
+      `question tool instead of telling ${sessionID} to drop it. Where the text ` +
       `changes other parts of the job, send it to the sessions you started that those parts are under, and only to them: ${sessionID} already has ` +
       "the text, and every session between it and you and every session above you already has this envelope.",
     "",

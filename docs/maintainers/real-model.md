@@ -166,8 +166,9 @@ countermands, messages telling the half to drop the text and do its task as give
 the marks, is what the check is read by.
 
 **The reading.** A countermand, or a session replacing `numbers/b.txt`, in two or more of the five
-runs reopens the wording of `typedNotice`, which says after "acts on it." that the session "decides
-what the text means for its part"; a new wording is checked the same way, five runs. Fewer than two
+runs reopens the wording of `typedNotice`, which says the text stands as the person's until they say
+otherwise, and that a session above which thinks it breaks the job asks the person instead of telling
+the session to drop it; a new wording is checked the same way, five runs. Fewer than two
 leaves the text as it is.
 
 ## A finding a session makes

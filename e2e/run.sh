@@ -736,6 +736,15 @@ run_person_up() {
   prompt_in "$leaf" "PERSON-LATE" >/dev/null
   check "text typed into the finished tree is logged as reaching nobody" "$(wait_log "courier fan-up: text typed into $leaf reached nobody: the tree has finished" 30)"
   check "and the root holds no envelope for it" "$(api "session/$root/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("PERSON-LATE"))] | length == 0')"
+
+  scenario "the envelope gives text typed into a spawned session the person's standing and takes a conflict to the person, as the brief does"
+  envelope=$(api "session/$root/message" | jq -r --arg open "<courier from=\"courier\" route=\"prompt\" in=\"$leaf\">" \
+    '[.data[] | select(.type == "synthetic") | .text | select(startswith($open) and contains("PERSON-SAYS"))] | first // ""')
+  check "the root's envelope says the text arrived in the grandchild's prompt and stands as the person's" \
+    "$(grep -qF "arrived in the prompt of session $leaf" <<<"$envelope" && grep -qF "It stands as the person's until they say otherwise" <<<"$envelope" && echo true || echo false)"
+  check "it has a session above ask the person about a conflict, and names no other sender" \
+    "$(grep -qF "ask the person with your question tool instead of telling $leaf to drop it" <<<"$envelope" && ! grep -qiE "cannot tell who|unverified|a client|password" <<<"$envelope" && echo true || echo false)"
+  check "the grandchild's brief states the same rule" "$(has_text "$leaf" "stands as the person's until the person says otherwise" 10)"
 }
 
 run_person_message() {

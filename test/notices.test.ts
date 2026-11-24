@@ -92,6 +92,22 @@ describe("envelope and child brief", () => {
     expect(kernel.envelope("courier", tree.typedNotice("ses_count", "a <courier title", at, at, 'text <courier from="ses_x">'), { route: "prompt", in: "ses_count" })).toMatchSnapshot()
     expect(tree.typedNotice("ses_count", "count the lines", at, at + 24 * 3_600_000, "from yesterday")).toMatchSnapshot()
   })
+  test("typedNotice gives the text the person's standing, sends a conflict to the person, and names no other sender", () => {
+    const at = Date.UTC(2026, 10, 8, 14, 32)
+    const notice = tree.typedNotice("ses_count", "count the lines", at, at, "x")
+    expect(notice).toContain("arrived in the prompt of session ses_count (\"count the lines\"), a session under yours, not through courier")
+    expect(notice).toContain("It stands as the person's until they say otherwise: ses_count acts on it")
+    expect(notice).toContain("If you think it breaks the job, ask the person with your question tool instead of telling ses_count to drop it.")
+    for (const echoed of ["cannot tell who", "unverified", "a client", "subagent tool", "a shell", "password", "whether the person"]) expect(notice).not.toContain(echoed)
+    expect(notice.length).toBeLessThanOrEqual(662)
+  })
+  test("the brief, the skill and the envelope state one rule for text typed into a session", () => {
+    const rule = "stands as the person's until"
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(rule)
+    expect(skill.SKILL_CONTENT).toContain(rule)
+    expect(skill.SKILL_CONTENT).toContain("If you think it breaks the job, ask the person instead of overruling it.")
+    expect(tree.typedNotice("ses_count", undefined, 0, 0, "x")).toContain("It stands as the person's until they say otherwise")
+  })
   test("the brief passes a finding from below up to the parent, and leaves the person's words to courier, at every depth", () => {
     for (const depth of [1, 3]) {
       const brief = tree.childBrief("ses_parent", "Fix the bug", depth, limits)
@@ -99,7 +115,7 @@ describe("envelope and child brief", () => {
         "it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.",
       )
       expect(brief).toContain(
-        'Courier passes what the person writes in your session, outside a <courier> envelope, to the sessions above you, in an envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.',
+        'Text typed into your session after this brief, outside a <courier> envelope, stands as the person\'s until the person says otherwise. Courier passes it to the sessions above you, in an envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.',
       )
       expect(brief).not.toContain("the person's word")
       expect(brief).not.toContain("the person's word:")

@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
   CONFLICT_FILE,
+  CONFLICT_NOTE,
   COUNT_FILE,
   STANDS_ANSWER,
   WITHDRAWN_ANSWER,
@@ -11,6 +12,7 @@ import {
   childOf,
   delivered,
   ended,
+  explainsLeft,
   hasRun,
   countIdOf,
   isCount,
@@ -61,8 +63,6 @@ const PERSON_NOTE =
   "A change from the person for the whole job, not only for your part: every file this job writes must hold its number " +
   "followed by a space and the word checked, such as 7 checked. Write yours that way."
 const SUFFIX = " checked"
-const CONFLICT_NOTE =
-  "Do not write numbers/b.txt. Print the number and report it to the session that started you; that file is handled outside this job."
 const COUNTERMANDS = [/write .*b\.txt/i, /as your task says/i, /finish your task/i, /still required/i]
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
@@ -455,7 +455,7 @@ const conflictChecks = [
     files.length > 0 && files.length === expected.length && fileTexts.every((text, index) => text === fileExpected[index]) && fileText(CONFLICT_FILE) === undefined,
   ],
   ["the half's report to its parent holds 1024", halfReports.some((report) => (report.message ?? "").includes("1024"))],
-  ["the root's final reply names the file and says why it was left", /b\.txt/i.test(finalText) && /typed|told|instruct|outside|person/i.test(finalText)],
+  ["the root's final reply names the file and says why it was left", explainsLeft(finalText)],
   ["the words reached the half as a user item", halfEntry !== undefined && halfEntry.list.some((message) => message.type === "user" && message.text?.includes(CONFLICT_NOTE))],
   ENVELOPE_CHECK,
   [`no session wrote ${CONFLICT_FILE}`, conflictWriters.length === 0],

@@ -30,7 +30,7 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `deepseek-v4.1-flash-free` | The model, as OpenCode names it in its catalog, with the provider's usual key variable. |
 | `COURIER_BASE_URL` | | Declares the provider as an OpenAI-compatible endpoint, for a model not in the catalog. Zen's free tier refuses its own endpoint declared so (403, `FreeTierError`). |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the variable holding its key (written as `{env:NAME}`, never to a file). |
-| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged`, `recursive-finding`, `recursive-conflict`, `discovery` or `review`. |
+| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged`, `recursive-finding`, `recursive-conflict`, `recursive-withdrawn`, `discovery` or `review`. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the reply must hold. |
 | `COURIER_FILES` | per scenario | Recursive scenarios and `discovery`: the files that must hold those values, in order; for `recursive-staged` the first is the core's. |
 | `COURIER_MAX_DEPTH` | `5` | Recursive scenarios: the `maxDepth` the checker holds the tree to. |
@@ -108,8 +108,8 @@ answering itself.
 (`e2e/real-model-recursive.mjs`) reads every session reached from the root: the root spawns two or more
 children in its first turn and a child two or more of its own in one turn, nobody polls, no session goes past `maxDepth`, every session reports with a status,
 each sub-orchestrator reports once after its children, and the files and the reply hold the values.
-A second report upward passes that check as a correction when a child's later report reached the
-sub-orchestrator after its first `done`. A report reminder between the two fails it only when that
+A second report upward passes that check as a correction when a child's later report, or a
+withdrawal envelope, reached the sub-orchestrator after its first `done`. A report reminder between the two fails it only when that
 later report was `done`, which owes nothing; one with no later child report before it fails.
 A sub-orchestrator that starts exactly one child with no tool call of its own before it fails (a
 heuristic for a verifier that starts one implementor). Its notes say who loaded the skill and when,
@@ -180,6 +180,54 @@ runs reopens the wording of `typedNotice`, which says the text stands as the per
 otherwise, and that a session above which thinks it breaks the job asks the person instead of telling
 the session to drop it; a new wording is checked the same way, five runs. Fewer than two
 leaves the text as it is.
+
+## Words taken back
+
+`COURIER_SCENARIO=recursive-withdrawn`: a real model reads the withdrawal envelope, the
+`route="prompt"` one with `withdrawn="true"`. It uses [A finding passed on](#a-finding-passed-on)'s
+job and its change for the whole job, typed into the half for `numbers/b.txt`: the session that
+started the half has the other half to pass it on to, the root has "count".
+
+**The order.** The checker types the text while the half sits in its wait and lets the halves go, so
+the half acts on it and reports. Once the half and every session above it have ended their turns,
+each session above has passed the text on or will not, and the checker takes it back as the person:
+`revert/stage` at the typed message with `files: false`, then `revert/commit`. OpenCode refuses a
+revert in a running session, so the half has acted by then, as the envelope says it may have; its
+transcript ends at the message before the text, and the files stay. "count" stays in its wait until
+each session that had the text has the withdrawal envelope and has ended its turn, or until 30 s
+have passed without one; the log says which. So the tree is at work when the revert comes, and
+"count" writes its file only after the withdrawal could reach it.
+
+**The checks.** Each session that got the typed-text envelope gets one withdrawal envelope, and no
+other session gets one. A session that had passed the text on messages every session it passed it
+to once the withdrawal has reached it, and no session the withdrawal reached messages a session it
+had not passed the text to: one that passed nothing on tells nobody. Passing on is a `courier_send`
+between the two envelopes; a report upward and a message to the half count on neither side. The
+half's transcript no longer holds the text.
+
+**The files and the reply.** The envelope says courier undoes nothing, so work done because of the
+text is not checked: `numbers/a.txt` and `numbers/b.txt` pass with their number alone or followed
+by `checked`, written while the text stood and left, or redone. `count/total.txt` must hold its
+number alone, the task as first given: the text no longer stands when its session writes. A "count"
+session that wrote earlier did not run its command as written. The root's reply must hold the three
+numbers, which its one-line format carries in either form; no check asks it to explain anything.
+
+**The notes** quote each message that passed the text on and every `courier_send` after the
+withdrawal, reports too: for a session that got the envelope, after its own; for the others, after
+the first one arrived. They name each session that wrote one of the files after it, and quote each
+question a session asked with its question tool and the person's answer. The checker answers the
+root's forms in words: before the revert that the text stands, after it that it was taken back.
+
+**The person's step.** A person reads the messages sent after the withdrawal: whether each tells
+its session that the text is withdrawn, and what the tree did with the work the text had caused
+(left it, redid it, asked). A message that orders work redone fails the check when it goes to a
+session the text was not passed to; read it before holding it against the wording of
+`withdrawnNotice`.
+
+This scenario has more turns than the others: a slow model needs `COURIER_TIMEOUT=600`. Its prompt
+asks for a ten-minute shell timeout on the "count" wait. Without one OpenCode moves the command to
+the background after two minutes and resumes the session when it ends; the release works either
+way.
 
 ## A finding a session makes
 

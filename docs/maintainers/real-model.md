@@ -161,6 +161,16 @@ Every message to the half after the envelope is quoted in the notes, and those t
 order to write the file anyway are marked `possible countermand`. The mark is no check: a message
 that repeats the person's words matches too.
 
+**A question to the person.** The envelope tells a session above that thinks the text breaks the job
+to ask the person. A question from a session below goes to the root, which asks the person with its
+own question tool, so the person answers in the root's session. The checker answers each form there
+as the person who typed the text would: the text stands. It
+picks the option that keeps the text, one that leaves the file unwritten, or, with none, answers in
+words that the file is not written in this job. The run goes on and is scored on its outcome. The
+notes quote each question a session asked with its question tool, with its options, and the
+person's answer to each form; `summary.json` keeps the answers for `--saved`. A question asked in a
+reply's text, not with the tool, is not answered.
+
 **The person's step.** A person reads the quoted messages of each run and records how many are
 countermands, messages telling the half to drop the text and do its task as given. That count, not
 the marks, is what the check is read by.

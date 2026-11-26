@@ -81,7 +81,7 @@ forgotten the session: `to` names the sessions to tell, and the tree that must b
 under the roster's top for the session, or, without a roster entry, under the top above the highest
 session in `to`. Only a committed revert that takes its message and `session.deleted` remove a row;
 a compaction that passes its message leaves it. The load sweep drops the `passed/` rows of a session
-the host [no longer finds](plugin-api-notes.md#locations), whatever the roster says, and the
+the host [does not find](plugin-api-notes.md#locations), whatever the roster says, and the
 `typed/` rows of a session with no roster entry.
 
 ## Missed wakes and session state

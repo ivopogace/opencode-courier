@@ -58,8 +58,8 @@ race on gets keys of its own, one writer each. `test/store.test.ts` pins the tre
 | `report/<sessionID>/nudged` | `{ at, inboxID }`: when it was last reminded to report, and the reminder's inbox id, by which its delivery is not noted as a prompt when its `enqueued` was missed. One reminder while `nudged` is no earlier than `prompt`. |
 | `later/<id>` | A pending `courier_later` message. |
 | `question/<requestID>` | A relayed question, until answered, at most 14 days (the 100 newest). |
-| `typed/<sessionID>/<inboxID>` | `{ at, text }`: a `user` item typed into a spawned session, from its enqueue until its fan-up is sent or skipped. |
-| `passed/<sessionID>/<inboxID>` | `{ at, text, to, delivered }`: text the fan-up passed up, its first 200 characters, the sessions it reached and when it was delivered, until a committed revert removes its message or the session is forgotten. |
+| `typed/<sessionID>/<inboxID>` | `{ at, text }`: a `user` item typed into a spawned session, from its enqueue until its fan-up is sent or skipped, or the session is forgotten. |
+| `passed/<sessionID>/<inboxID>` | `{ at, text, to, delivered }`: text the fan-up passed up, its first 200 characters, the sessions it reached and when it was delivered, until a committed revert removes its message or the session is deleted. It outlives the session's roster entry. |
 | `wake/<sessionID>/<inboxID>` | A courier message waiting in an inbox: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled`. |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers. |
 
@@ -75,6 +75,14 @@ times, since both hub subscriptions note every event; `stopped` and `nudged` are
 failed `courier_send` or silent-end notice undoes its own note if the key still holds it.
 `pruneExpired` reads `report/` before the roster at load, so a child spawned during the sweep is
 never taken for an orphan.
+
+A `passed/` row holds all a take-back needs once `courier_cleanup` or the roster's expiry has
+forgotten the session: `to` names the sessions to tell, and the tree that must be at work is the one
+under the roster's top for the session, or, without a roster entry, under the top above the highest
+session in `to`. Only a committed revert that takes its message and `session.deleted` remove a row;
+a compaction that passes its message leaves it. The load sweep drops the `passed/` rows of a session
+the host [does not find](plugin-api-notes.md#locations), whatever the roster says, and the
+`typed/` rows of a session with no roster entry.
 
 ## Missed wakes and session state
 

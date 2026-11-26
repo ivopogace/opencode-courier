@@ -419,7 +419,8 @@ function relayPersonWords(messages, lastAssistant) {
   if (briefedBy && first.includes("CHILD-PERSON-WORDS")) {
     if (recent.includes("PERSON-LATE")) return { text: "LATE HEARD" }
     if (recent.includes("PERSON-TAKES-BACK")) return { text: "ANSWERED TOO LATE", hold: true }
-    if (recent.includes("PERSON-SAYS") && sent.length === 0) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "WORDS DONE", status: "done" } }
+    const report = recent.includes("PERSON-SAYS") ? "WORDS DONE" : recent.includes("PERSON-CLEANED-UP") ? "WORDS DONE, CLEAN UP" : undefined
+    if (report && sent.length === 0) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: report, status: "done" } }
     return { text: sent.length ? "WORDS REPORTED" : "LEAF WAITS" }
   }
   if (briefedBy && first.includes("CHILD-RELAYS-PERSON")) {
@@ -427,7 +428,10 @@ function relayPersonWords(messages, lastAssistant) {
     if (call?.function?.name === "courier_spawn") return { text: "RELAYER SPAWNED" }
     const later = messages.map((message) => textOf(message.content)).join("\n")
     const reported = sent.some((item) => (item.function.arguments ?? "").includes("RELAYER DONE"))
-    if (!reported && /<courier from="ses_\w+" status="done">/.test(later)) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "RELAYER DONE", status: "done" } }
+    const cleans = later.match(/<courier from="(ses_\w+)" status="done">\nWORDS DONE, CLEAN UP/)
+    const cleaned = messages.flatMap((message) => message.tool_calls ?? []).some((item) => item.function?.name === "courier_cleanup")
+    if (cleans && !cleaned) return { tool: "courier_cleanup", args: { sessionID: cleans[1] } }
+    if (!cleans && !reported && /<courier from="ses_\w+" status="done">/.test(later)) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "RELAYER DONE", status: "done" } }
     const replies = [
       TYPED_ENVELOPE.test(later) && "RELAYER HEARD TYPED",
       WITHDRAWN_ENVELOPE.test(recent) && "RELAYER HEARD WITHDRAWN",

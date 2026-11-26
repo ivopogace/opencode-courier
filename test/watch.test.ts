@@ -11,6 +11,7 @@ import { resetHub } from "./fixtures/reset.js"
 import { shared as relayState } from "../src/person/question/shared.js"
 import { send } from "../src/tree/send.js"
 import { awaited, reportOf } from "../src/tree/report.js"
+import { cleanup } from "../src/tree/cleanup.js"
 import { forgetChild } from "../src/tree/forget.js"
 import { childStore, passedKey, promptKey, settledKey, toldKey, typedKey, wakeStore } from "../src/tree/store.js"
 import {
@@ -1515,20 +1516,22 @@ describe("the fan-up of text typed into a spawned session", () => {
       expect(sent).toHaveLength(2)
     })
 
-    test("two subscriptions tell once", async () => {
-      const { sent, store, handle } = await passed()
+    test("two subscriptions tell once, and log the revert once", async () => {
+      const { sent, store, logged, handle } = await passed()
       const get = store.get.bind(store)
       await Promise.all([handle(reverted("msg_1")), handle(reverted("msg_1"))])
       expect(envelopes(sent)).toEqual(["ses_mid", "ses_root"])
       expect(get(PASSED)).toBeUndefined()
+      expect(logged.filter((line) => line.includes("taken back in ses_leaf"))).toEqual(["courier fan-up: text taken back in ses_leaf told to 2 sessions"])
     })
 
     test("a revert that leaves the message tells nobody and keeps what was passed", async () => {
-      const { sent, store, transcripts, handle } = await passed()
+      const { sent, store, logged, transcripts, handle } = await passed()
       transcripts.set("ses_leaf", [before, { id: "msg_1", type: "user", text: "PERSON-SAYS", time: { created: 601 } }])
       await handle(reverted("msg_9"))
       expect(sent).toEqual([])
       expect(store.has(PASSED)).toBe(true)
+      expect(logged).toContain("courier fan-up: the revert in ses_leaf took back none of the 1 texts passed up from it")
     })
 
     test("a revert to an earlier message takes back every passed text after it, in one notice each", async () => {
@@ -1608,6 +1611,128 @@ describe("the fan-up of text typed into a spawned session", () => {
       const { store, type } = await finished()
       await type()
       expect([...store.keys()].filter((key) => key.startsWith("passed/"))).toEqual([])
+    })
+
+    describe("in a session its parent has cleaned up", () => {
+      const untitled = (...texts: { at: number; text: string }[]) =>
+        envelope("courier", withdrawnNotice("ses_leaf", undefined, 1_000_000, texts), { route: "prompt", in: "ses_leaf", withdrawn: "true" })
+      const rows = (store: Map<string, unknown>, prefix: string) => [...store.keys()].filter((key) => key.startsWith(prefix))
+
+      async function cleanedUp(texts?: Record<string, string>) {
+        const made = await passed(texts)
+        await made.children.settled("ses_leaf", "report", 700, "done")
+        const cleanupPorts = { storage: made.ports.storage, worktree: { remove: async () => {} }, projectID: "prj", inspect: async () => undefined, now: made.ports.now }
+        expect(await cleanup(cleanupPorts, "ses_mid", { sessionID: "ses_leaf" })).toMatchObject({ outcome: "forgotten" })
+        expect(await made.children.indexedParent("ses_leaf")).toBeUndefined()
+        await made.children.prompted("ses_mid", 800)
+        return made
+      }
+
+      test("the cleanup leaves what was passed, and the take-back tells each session the text reached once, naming the session without a title", async () => {
+        const { sent, store, logged, handle } = await cleanedUp()
+        expect(rows(store, "report/ses_leaf/")).toEqual([])
+        expect(store.get(PASSED)).toEqual({ at: 500, text: "PERSON-SAYS", to: ["ses_mid", "ses_root"], delivered: 601 })
+
+        await handle(reverted("msg_1"))
+
+        expect(sent).toEqual(
+          ["ses_mid", "ses_root"].map((sessionID) => ({
+            sessionID,
+            text: untitled({ at: 500, text: "PERSON-SAYS" }),
+            description: "Text typed into ses_leaf was taken back",
+            metadata: { source: "courier", route: "prompt", in: "ses_leaf", withdrawn: true },
+            delivery: "steer",
+          })),
+        )
+        expect(sent[0].text).toContain("the prompt of session ses_leaf, a session under yours")
+        expect(sent[0].text).not.toContain('("')
+        expect(logged).toContain("courier fan-up: text taken back in ses_leaf told to 2 sessions")
+        expect(store.has(PASSED)).toBe(false)
+
+        await Promise.all([handle(reverted("msg_1")), handle(reverted("msg_1", "evt_r2"))])
+        expect(sent).toHaveLength(2)
+      })
+
+      test("a revert to the later of two texts takes back that one and keeps the earlier", async () => {
+        const { sent, store, transcripts, handle } = await cleanedUp({ msg_1: "FIRST", msg_2: "SECOND" })
+        transcripts.set("ses_leaf", [before, { id: "msg_1", type: "user", text: "FIRST", time: { created: 601 } }])
+        await handle(reverted("msg_2"))
+        expect(envelopes(sent)).toEqual(["ses_mid", "ses_root"])
+        expect(sent[0].text).toBe(untitled({ at: 500, text: "SECOND" }))
+        expect(rows(store, "passed/")).toEqual([PASSED])
+      })
+
+      test("a finished tree tells nobody, logs it and forgets what was passed", async () => {
+        const { sent, store, logged, children, handle } = await cleanedUp()
+        await children.settled("ses_mid", "report", 900, "done")
+        await handle(reverted("msg_1"))
+        expect(sent).toEqual([])
+        expect(logged).toContain("courier fan-up: text taken back in ses_leaf reached nobody: the tree has finished")
+        expect(store.has(PASSED)).toBe(false)
+      })
+
+      test("the top is the session above the highest one the text reached, so its running turn alone keeps the tree at work", async () => {
+        const made = await finished()
+        await made.children.prompted("ses_leaf", 100)
+        const synthetic = made.ports.session.synthetic
+        ;(made.ports.session as any).synthetic = (input: { sessionID: string }) => (input.sessionID === "ses_root" ? Promise.reject(new Error("busy")) : synthetic(input as never))
+        await made.type()
+        ;(made.ports.session as any).synthetic = synthetic
+        expect(made.store.get(PASSED)).toMatchObject({ to: ["ses_mid"] })
+        await made.children.settled("ses_leaf", "report", 700, "done")
+        await forgetChild(made.ports.storage, "ses_mid", "ses_leaf")
+        made.sent.length = 0
+        made.transcripts.set("ses_leaf", [before])
+        made.times.set("ses_root", { created: 1, updated: 40, idle: 30, busy: 40 })
+        made.transcripts.set("ses_root", [{ type: "user", text: "go" }])
+
+        await made.handle(reverted("msg_1"))
+
+        expect(envelopes(made.sent)).toEqual(["ses_mid"])
+      })
+
+      test("when the session above it has been cleaned up too, the highest session the text reached is the top", async () => {
+        const { sent, logged, ports, handle } = await cleanedUp()
+        await forgetChild(ports.storage, "ses_root", "ses_mid")
+        await handle(reverted("msg_1"))
+        expect(sent).toEqual([])
+        expect(logged).toContain("courier fan-up: text taken back in ses_leaf reached nobody: the tree has finished")
+
+        const running = await cleanedUp()
+        await forgetChild(running.ports.storage, "ses_root", "ses_mid")
+        running.times.set("ses_root", { created: 1, updated: 40, idle: 30, busy: 40 })
+        running.transcripts.set("ses_root", [{ type: "user", text: "go" }])
+        await running.handle(reverted("msg_1"))
+        expect(envelopes(running.sent)).toEqual(["ses_mid", "ses_root"])
+      })
+
+      test("passed text that names no session it reached tells nobody, logs it and is forgotten", async () => {
+        const { sent, store, logged, handle } = await cleanedUp()
+        store.set(PASSED, { ...(store.get(PASSED) as object), to: [] })
+        await handle(reverted("msg_1"))
+        expect(sent).toEqual([])
+        expect(logged).toContain("courier fan-up: text taken back in ses_leaf reached nobody: no session above it is known")
+        expect(store.has(PASSED)).toBe(false)
+      })
+
+      test("a deleted session leaves no rows, cleaned up or not, and its revert tells nobody", async () => {
+        const deleted = (sessionID: string) => ({ id: `evt_x_${sessionID}`, type: "session.deleted", created: 950, data: { sessionID } })
+        for (const made of [await cleanedUp({ msg_1: "FIRST", msg_2: "SECOND" }), await passed({ msg_1: "FIRST", msg_2: "SECOND" })]) {
+          await made.handle(item("msg_3", "still waiting"))
+          expect(rows(made.store, "passed/ses_leaf/")).toHaveLength(2)
+          await made.handle(deleted("ses_leaf"))
+          expect([...rows(made.store, "passed/"), ...rows(made.store, "typed/")]).toEqual(made.store.has("roster/ses_mid/ses_leaf") ? ["typed/ses_leaf/msg_3"] : [])
+          await made.handle(reverted("msg_1"))
+          expect(made.sent).toEqual([])
+          expect(made.logged.filter((line) => line.includes("taken back"))).toEqual([])
+        }
+      })
+
+      test("deleting the session above it leaves what was passed", async () => {
+        const { store, handle } = await passed()
+        await handle({ id: "evt_x", type: "session.deleted", created: 950, data: { sessionID: "ses_mid" } })
+        expect(store.has(PASSED)).toBe(true)
+      })
     })
 
     test("the notice is unowed at an ancestor: delivering it asks for no new report", async () => {

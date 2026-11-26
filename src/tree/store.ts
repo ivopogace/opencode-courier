@@ -131,15 +131,18 @@ export function childStore(storage: Storage): ChildStore {
 
   const passedRows = (sessionID: string) => scanEntries<unknown>(storage, `${PASSED_PREFIX}${sessionID}/`)
 
-  const forgetPassed = async (sessionID: string, inboxIDs: ReadonlyArray<string>) => {
-    await Promise.all(inboxIDs.map((inboxID) => storage.remove(passedKey(sessionID, inboxID))))
+  const forgetPassed = async (sessionID: string, inboxIDs?: ReadonlyArray<string>) => {
+    const ids = inboxIDs ?? (await passedRows(sessionID)).map(({ key }) => key)
+    await Promise.all(ids.map((inboxID) => storage.remove(passedKey(sessionID, inboxID))))
   }
 
   const forgetTyped = async (sessionID: string, inboxID?: string) => {
     if (inboxID !== undefined) return storage.remove(typedKey(sessionID, inboxID))
-    const [typed, passed] = await Promise.all([scanEntries<unknown>(storage, `${TYPED_PREFIX}${sessionID}/`), passedRows(sessionID)])
-    await Promise.all([...typed.map(({ key }) => storage.remove(typedKey(sessionID, key))), forgetPassed(sessionID, passed.map(({ key }) => key))])
+    const typed = await scanEntries<unknown>(storage, `${TYPED_PREFIX}${sessionID}/`)
+    await Promise.all(typed.map(({ key }) => storage.remove(typedKey(sessionID, key))))
   }
+
+  const sessionsUnder = async (prefix: string) => new Set((await scanEntries<unknown>(storage, prefix)).map(({ key }) => key.slice(0, key.indexOf("/"))))
 
   const forgetReport = async (sessionID: string) => {
     await Promise.all([...Object.values(REPORT_KEYS).map((key) => storage.remove(key(sessionID))), forgetTyped(sessionID)])
@@ -252,10 +255,7 @@ export function childStore(storage: Storage): ChildStore {
     },
     typedOf: async (sessionID, inboxID) => readTyped(await storage.get(typedKey(sessionID, inboxID))),
     forgetTyped,
-    async typedSessions() {
-      const rows = (await Promise.all([TYPED_PREFIX, PASSED_PREFIX].map((prefix) => scanEntries<unknown>(storage, prefix)))).flat()
-      return new Set(rows.map(({ key }) => key.slice(0, key.indexOf("/"))))
-    },
+    typedSessions: () => sessionsUnder(TYPED_PREFIX),
     async passed(sessionID, { inboxID, ...passed }) {
       await storage.set(passedKey(sessionID, inboxID), { ...passed, to: [...passed.to] })
     },
@@ -269,6 +269,7 @@ export function childStore(storage: Storage): ChildStore {
         .sort((a, b) => a.delivered - b.delivered)
     },
     forgetPassed,
+    passedSessions: () => sessionsUnder(PASSED_PREFIX),
   }
 }
 

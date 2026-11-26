@@ -68,7 +68,8 @@ export interface ChildStore {
   typedSessions(): Promise<ReadonlySet<string>>
   passed(sessionID: string, passed: Passed): Promise<void>
   passedOf(sessionID: string): Promise<Passed[]>
-  forgetPassed(sessionID: string, inboxIDs: ReadonlyArray<string>): Promise<void>
+  forgetPassed(sessionID: string, inboxIDs?: ReadonlyArray<string>): Promise<void>
+  passedSessions(): Promise<ReadonlySet<string>>
 }
 
 export interface Wake {

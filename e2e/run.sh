@@ -234,7 +234,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:8 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:16 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:34 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:22 plugin-add:16"
+SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:8 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:16 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:34 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:35 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -783,6 +783,50 @@ run_person_up() {
   check "what was passed is forgotten" "$([ -z "$(kv get "passed/$leaf/$typed")" ] && echo true || echo false)"
   turn_ended "$mid"
   check "the withdrawal asked the middle for no new report" "$(kv get "report/$mid/prompt" | jq -r --argjson prompt "$prompt_at" '.at == $prompt')"
+
+  scenario "text taken back in a session its parent has cleaned up is still withdrawn at every session it reached, and what was passed goes when the session is deleted"
+  out=$(prompt "COURIER-RELAY-PERSON")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  leaf=$(spawned_by "$mid")
+  check "a third tree is at work, its grandchild owing a report" "$([ -n "$leaf" ] && [ -n "$(reply_time "$leaf" "LEAF WAITS" 30)" ] && echo true || echo false)"
+  turn_ended "$leaf"
+  stays=$(api_post "session/$leaf/prompt" '{"text":"PERSON-STAYS: print the number"}' | jq -r '.data.id // empty')
+  check "a first text sent to the grandchild through the API reached the root and the middle" \
+    "$([ -n "$stays" ] && [ "$(has_text "$root" "PERSON-STAYS" 30)" = true ] && [ "$(has_text "$mid" "PERSON-STAYS" 30)" = true ] && echo true || echo false)"
+  turn_ended "$leaf"
+  typed=$(api_post "session/$leaf/prompt" '{"text":"PERSON-CLEANED-UP: write the number to a file"}' | jq -r '.data.id // empty')
+  check "a second one reached them too" \
+    "$([ -n "$typed" ] && [ "$(has_text "$root" "PERSON-CLEANED-UP" 30)" = true ] && [ "$(has_text "$mid" "PERSON-CLEANED-UP" 30)" = true ] && echo true || echo false)"
+  check "the grandchild reported" "$(has_text "$mid" "<courier from=\"$leaf\" status=\"done\">" 30)"
+  check "and its parent cleaned it up: its roster entry, reverse key and report state are gone" \
+    "$(for _ in $(seq 1 30); do [ -z "$(kv get "roster/$mid/$leaf")$(kv get "roster-by-child/$leaf")$(kv get "report/$leaf/prompt")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+  check "what was passed outlives the cleanup, both texts" \
+    "$([ "$(kv get "passed/$leaf/$stays" | jq -r --arg mid "$mid" --arg root "$root" '.to == [$mid, $root]')" = true ] &&
+      kv get "passed/$leaf/$typed" | jq -r --arg mid "$mid" --arg root "$root" '.to == [$mid, $root] and (.text | startswith("PERSON-CLEANED-UP"))')"
+  check "the grandchild still exists in OpenCode" "$([ "$(status_of "$leaf")" = 200 ] && echo true || echo false)"
+  turn_ended "$leaf"
+  turn_ended "$mid"
+  turn_ended "$root"
+  check "the revert is staged at the second text, leaving the files alone" \
+    "$(api_post "session/$leaf/revert/stage" "$(jq -nc --arg id "$typed" '{messageID: $id, files: false}')" | jq -r --arg id "$typed" '.data.messageID == $id')"
+  check "and committed" "$([[ $(person "session/$leaf/revert/commit") == 20* ]] && echo true || echo false)"
+  check "the grandchild's transcript has the first text and no longer the second" \
+    "$(api "session/$leaf/message" | jq -r --arg stays "$stays" --arg id "$typed" 'any(.data[]; .id == $stays) and (any(.data[]; .id == $id) | not)')"
+  check "the root replied to the withdrawal" "$([ -n "$(reply_time "$root" "ROOT HEARD WITHDRAWN" 45)" ] && echo true || echo false)"
+  check "the middle replied to the withdrawal" "$([ -n "$(reply_time "$mid" "RELAYER HEARD WITHDRAWN" 45)" ] && echo true || echo false)"
+  for session in "$root" "$mid"; do
+    check "$([ "$session" = "$root" ] && echo root || echo middle) holds exactly one withdrawal, naming the session without a title and showing the second text only" \
+      "$(api "session/$session/message" | jq -r --arg open "<courier from=\"courier\" route=\"prompt\" in=\"$leaf\" withdrawn=\"true\">" --arg leaf "$leaf" \
+        '[.data[] | select(.type == "synthetic") | .text | select(startswith($open))] |
+          length == 1 and (.[0] | contains("the prompt of session " + $leaf + ", a session under yours") and contains("PERSON-CLEANED-UP: write the number to a file") and (contains("PERSON-STAYS") | not))')"
+  done
+  check "the plugin logged whom it told" "$(wait_log "courier fan-up: text taken back in $leaf told to 2 sessions" 10)"
+  check "the text taken back is forgotten, the one that stands is kept" \
+    "$([ -z "$(kv get "passed/$leaf/$typed")" ] && [ -n "$(kv get "passed/$leaf/$stays")" ] && echo true || echo false)"
+  check "the grandchild is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$leaf") == 20* ]] && echo true || echo false)"
+  check "and what was passed from it is gone" \
+    "$(for _ in $(seq 1 20); do [ -z "$(kv get "passed/$leaf/$stays")" ] && { echo true; exit; }; sleep 1; done; echo false)"
 }
 
 run_person_message() {
@@ -1534,6 +1578,10 @@ run_roster() {
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   check "courier_later completed" "$(tool_state courier_later <<<"$out" | jq -r '.status == "completed"')"
   check "the scheduler holds the owner key" "$(kv get scheduler/owner | jq -r '(.server | type) == "string" and (.at | type) == "number"')"
+  unlisted=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id // empty')
+  deleted=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id // empty')
+  check "of two sessions with no roster entry, one is deleted" \
+    "$([ -n "$unlisted" ] && [ -n "$deleted" ] && [[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$deleted") == 20* ]] && echo true || echo false)"
   stop_server
   check "and gave it back as the server stopped" "$([ -z "$(kv get scheduler/owner)" ] && echo true || echo false)"
   expires=$(($(now_ms) + 20000))
@@ -1546,6 +1594,10 @@ run_roster() {
   kv set "report/$orphan/prompt" '{"at":1}' "roster-by-child/$(tail -1 <<<"$spawned")"
   kv set "report/$orphan/settled" '{"at":1,"by":"report"}' "roster-by-child/$(tail -1 <<<"$spawned")"
   check "report state is written for a session with no roster entry" "$([ -n "$(kv get "report/$orphan/prompt")" ] && echo true || echo false)"
+  for id in "$unlisted" "$deleted"; do
+    kv set "passed/$id/msg_sweep" "{\"at\":1,\"text\":\"words\",\"to\":[\"$roster_parent\"],\"delivered\":2}" "roster-by-child/$(tail -1 <<<"$spawned")"
+  done
+  check "passed text is written for both" "$([ -n "$(kv get "passed/$unlisted/msg_sweep")" ] && [ -n "$(kv get "passed/$deleted/msg_sweep")" ] && echo true || echo false)"
   start_server
   restarted=$(now_ms)
   api "plugin?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" >/dev/null
@@ -1566,6 +1618,9 @@ run_roster() {
     "$(for _ in $(seq 1 10); do [ -z "$(kv get "report/$orphan/prompt")$(kv get "report/$orphan/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
   check "while a live child's report state was kept" \
     "$(for id in $spawned; do [ -n "$(kv get "report/$id/prompt")" ] || { echo false; exit; }; done; echo true)"
+  check "the passed text of the deleted session was swept too" \
+    "$(for _ in $(seq 1 10); do [ -z "$(kv get "passed/$deleted/msg_sweep")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+  check "while that of the session that exists was kept, though it has no roster entry" "$([ -n "$(kv get "passed/$unlisted/msg_sweep")" ] && echo true || echo false)"
 }
 
 run_webhook() {

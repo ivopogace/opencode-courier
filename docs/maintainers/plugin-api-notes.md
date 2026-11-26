@@ -166,6 +166,10 @@ that ran the model would go idle. A pin bump re-checks its name, its shape (cour
 - **A gone directory answers 404 `LocationNotFoundError`** on routes that boot its location, so a
   `NotFound` tag test for a deleted session matches it too. Where: `isNotFound` in
   `src/platform/json.ts`.
+- **A deleted session's own tag** is `Session.NotFoundError` from the plugin's `session.get`, at load
+  too, and `SessionNotFoundError` over HTTP. What must not be dropped for a session whose directory
+  is gone, as a worktree is after `courier_cleanup`, tests that tag alone. Where:
+  `isSessionNotFound` in `src/platform/json.ts`, `pruneExpired` in `src/tree/roster.ts`.
 - **Directories are canonical**: ones that differ by a trailing slash or `..` are one location, and
   `session.create` stores the canonical one. Courier compares no directories today; a comparison
   must resolve both first.

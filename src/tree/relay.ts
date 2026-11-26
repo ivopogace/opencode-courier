@@ -164,17 +164,30 @@ async function tellWithdrawn(ports: WatchPorts, sessionID: string, title: string
   ports.log(`courier fan-up: text taken back in ${sessionID} told to ${told} sessions`)
 }
 
+async function topOf(children: ChildStore, sessionID: string, gone: ReadonlyArray<Passed>) {
+  const above = await ancestorsOf(children, sessionID)
+  if (above.length) return above.at(-1)
+  const reached = gone.findLast((item) => item.to.length)?.to.at(-1)
+  return reached === undefined ? undefined : ((await ancestorsOf(children, reached)).at(-1) ?? reached)
+}
+
 export async function relayWithdrawn(ports: WatchPorts, seen: Set<string>, event: Reverted) {
   const { sessionID, to } = event.data
   const children = childStore(ports.storage)
-  if ((await children.indexedParent(sessionID)) === undefined) return false
   const passed = await children.passedOf(sessionID)
   if (!passed.length || !claim(seen, event.id)) return false
   const gone = await takenBack(ports, sessionID, to, passed)
-  if (!gone.length) return false
+  if (!gone.length) {
+    ports.log(`courier fan-up: the revert in ${sessionID} took back none of the ${passed.length} texts passed up from it`)
+    return false
+  }
   try {
-    const root = (await ancestorsOf(children, sessionID)).at(-1)
-    if (root === undefined || !(await atWork(ports, children, sessionID, root))) {
+    const root = await topOf(children, sessionID, gone)
+    if (root === undefined) {
+      ports.log(`courier fan-up: text taken back in ${sessionID} reached nobody: no session above it is known`)
+      return false
+    }
+    if (!(await atWork(ports, children, sessionID, root))) {
       ports.log(`courier fan-up: text taken back in ${sessionID} reached nobody: the tree has finished`)
       return false
     }

@@ -5,9 +5,9 @@ export async function forgetChild(storage: RosterStorage, parentID: string, sess
   await childStore(storage).remove(parentID, sessionID)
 }
 
-export async function forgetDeleted(ports: Pick<WatchPorts, "storage">, forgotten: ReadonlyArray<string>) {
+export async function forgetDeleted(ports: Pick<WatchPorts, "storage">, sessionID: string, forgotten: ReadonlyArray<string>) {
   const children = childStore(ports.storage)
-  await Promise.all(forgotten.map((id) => children.forgetReport(id)))
+  await Promise.all([...forgotten.map((id) => children.forgetReport(id)), children.forgetTyped(sessionID), children.forgetPassed(sessionID)])
 }
 
 export async function forgetReports(storage: RosterStorage, keys: ReportKeys, sessions: ReadonlyArray<string>) {

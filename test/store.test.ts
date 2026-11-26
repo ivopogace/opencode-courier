@@ -150,7 +150,7 @@ test("the load sweep drops the typed rows of sessions with no roster entry", asy
   expect(store.has("typed/ses_gone/msg_2")).toBe(false)
 })
 
-test("passed text is kept under passed/<sessionID>/<inboxID>, read back in the order it was delivered, and goes with the child's other rows", async () => {
+test("passed text is kept under passed/<sessionID>/<inboxID>, read back in the order it was delivered, and outlives the child's roster entry and its other rows", async () => {
   const { storage, store, writes } = loggingStorage()
   const children = childStore(storage)
   await children.record({ sessionID: "ses_child", parentID: "ses_parent", title: "Child", directory: "/repo", isolated: false, createdAt: 1, reports: "status" })
@@ -167,7 +167,8 @@ test("passed text is kept under passed/<sessionID>/<inboxID>, read back in the o
     { inboxID: "msg_2", at: 11, text: "more", to: ["ses_parent"], delivered: 30 },
   ])
   expect(await children.passedOf("ses_other")).toEqual([])
-  expect(await children.typedSessions()).toEqual(new Set(["ses_child"]))
+  expect(await children.passedSessions()).toEqual(new Set(["ses_child"]))
+  expect(await children.typedSessions()).toEqual(new Set())
 
   await children.forgetPassed("ses_child", ["msg_1"])
   expect(store.has("passed/ses_child/msg_1")).toBe(false)
@@ -177,21 +178,51 @@ test("passed text is kept under passed/<sessionID>/<inboxID>, read back in the o
   await children.forgetTyped("ses_child", "msg_4")
   expect(store.has("passed/ses_child/msg_2")).toBe(true)
 
+  await children.typed("ses_child", "msg_5", 14, "waiting")
+  await children.prompted("ses_child", 15)
   await forgetChild(storage, "ses_parent", "ses_child")
-  expect([...store.keys()].filter((key) => key.startsWith("passed/"))).toEqual([])
+  expect([...store.keys()]).toEqual(["passed/ses_child/msg_2", "passed/ses_child/msg_3"])
+  await children.forgetReport("ses_child")
+  await children.forgetTyped("ses_child")
+  expect([...store.keys()]).toEqual(["passed/ses_child/msg_2", "passed/ses_child/msg_3"])
+
+  await children.forgetPassed("ses_child")
+  expect([...store.keys()]).toEqual([])
+  expect(await children.passedSessions()).toEqual(new Set())
 })
 
-test("the load sweep drops the passed text of sessions with no roster entry", async () => {
+test("the load sweep drops passed text only of a session that no longer exists, with a roster entry or without one", async () => {
   const { storage, store } = loggingStorage()
   const children = childStore(storage)
-  await children.record({ sessionID: "ses_child", parentID: "ses_parent", title: "Child", directory: "/repo", isolated: false, createdAt: Date.now(), reports: "status" })
-  await children.passed("ses_child", { inboxID: "msg_1", at: 10, text: "kept", to: ["ses_parent"], delivered: 20 })
-  await children.passed("ses_gone", { inboxID: "msg_2", at: 10, text: "dropped", to: ["ses_parent"], delivered: 20 })
+  const fresh = { parentID: "ses_parent", directory: "/repo", isolated: false, createdAt: Date.now(), reports: "status" as const }
+  await children.record({ ...fresh, sessionID: "ses_child", title: "Child" })
+  await children.record({ ...fresh, sessionID: "ses_deleted_child", title: "Deleted child" })
+  const sessions = ["ses_child", "ses_deleted_child", "ses_cleaned_up", "ses_deleted", "ses_unreadable", "ses_elsewhere"]
+  for (const sessionID of sessions) await children.passed(sessionID, { inboxID: "msg_1", at: 10, text: "words", to: ["ses_parent"], delivered: 20 })
+  const asked: string[] = []
+  const errors: Record<string, unknown> = {
+    ses_deleted_child: { _tag: "Session.NotFoundError", sessionID: "ses_deleted_child" },
+    ses_deleted: { _tag: "SessionNotFoundError" },
+    ses_unreadable: new Error("down"),
+    ses_elsewhere: { _tag: "LocationNotFoundError" },
+  }
+  const session = {
+    get: async ({ sessionID }: { sessionID: string }) => {
+      asked.push(sessionID)
+      if (sessionID in errors) throw errors[sessionID]
+      return {}
+    },
+  }
+  const passedRows = () => [...store.keys()].filter((key) => key.startsWith("passed/"))
 
   await pruneExpired(storage, Date.now(), () => true)
+  expect(passedRows()).toHaveLength(sessions.length)
 
-  expect(store.has("passed/ses_child/msg_1")).toBe(true)
-  expect(store.has("passed/ses_gone/msg_2")).toBe(false)
+  await pruneExpired(storage, Date.now(), () => true, session as never)
+
+  expect(asked.sort()).toEqual([...sessions].sort())
+  expect(passedRows()).toEqual(["ses_child", "ses_cleaned_up", "ses_unreadable", "ses_elsewhere"].map((sessionID) => `passed/${sessionID}/msg_1`))
+  expect(store.has("roster/ses_parent/ses_deleted_child")).toBe(true)
 })
 
 test("the wake store keeps a watched message under wake/<sessionID>/<inboxID>, without its key's ids, and reads back what it wrote", async () => {

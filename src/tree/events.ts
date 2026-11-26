@@ -141,7 +141,7 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const [parentID, started] = await Promise.all([children.indexedParent(sessionID), children.children(sessionID)])
   const forgotten = [...(parentID === undefined ? [] : [sessionID]), ...started.map((child) => child.sessionID)]
   const entry = parentID === undefined ? undefined : await children.entry(parentID, sessionID)
-  await forgetDeleted(ports, forgotten)
+  await forgetDeleted(ports, sessionID, forgotten)
   if (parentID !== undefined && entry && !entry.isolated && started.length === 0) await forgetChild(ports.storage, parentID, sessionID)
   if (parentID !== undefined) await syncStanding(ports, parentID)
   return forgotten

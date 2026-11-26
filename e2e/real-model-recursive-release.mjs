@@ -147,7 +147,10 @@ const OVERRULES = /\b(?:anyway|override|overrule|ignore|drop|disregard|original 
 const KEEPS = /\b(?:leave|left|skip|keep|stands?|honou?r|respect|follow|obey|unwritten|outside|as (?:typed|written|told|instructed))\b/i
 const NO_WRITE = /\b(?:not|don't|never|without)\b[^.;:]*\bwrit/i
 const WRITES = /\bwrit(?:e|es|ing)\b/i
-const overrules = (text) => OVERRULES.test(text) || (WRITES.test(text) && !NO_WRITE.test(text))
+const BY_OTHERS = /\b(?:outside|elsewhere|externally|someone|something|another process)\b.*\bwrit(?:e|es|ing)\b/i
+const CLAUSES = /[.;:\u2013\u2014]|\s-\s/
+const writesHere = (clause) => WRITES.test(clause) && !NO_WRITE.test(clause) && !BY_OTHERS.test(clause)
+const overrules = (text) => OVERRULES.test(text) || text.split(CLAUSES).some(writesHere)
 export const keepsText = (text) => !overrules(text) && (KEEPS.test(text) || NO_WRITE.test(text))
 const answersOf = (form, pick) =>
   form.fields.flatMap((field) => {

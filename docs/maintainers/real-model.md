@@ -179,7 +179,8 @@ that repeats the person's words matches too.
 to ask the person. A question from a session below goes to the root, which asks the person with its
 own question tool, so the person answers in the root's session. The checker answers each form there
 as the person who typed the text would: the text stands. It
-picks the option that keeps the text, one that leaves the file unwritten, or, with none, answers in
+picks the option that keeps the text, one that leaves the file unwritten or has it written only
+outside the job, and never one that has a session of the job write it; with none, it answers in
 words that the file is not written, since the job does not need it. The run goes on and is scored on its outcome. The
 notes quote each question a session asked with its question tool, with its options, and the
 person's answer to each form; `summary.json` keeps the answers for `--saved`. A question asked in a

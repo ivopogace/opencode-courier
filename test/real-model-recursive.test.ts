@@ -1118,6 +1118,25 @@ describe("the person's answer to a question in --conflict", () => {
     expect(personAnswer({ fields: [{ key: "q", type: "string", options: options("Yes", "No") }] })[0]!.said).toBe(CONFLICT_ANSWER)
   })
 
+  test("an option that follows the typed text is picked, though it says who writes the file elsewhere; one that keeps the original task is not, and with only such options the person answers in words", () => {
+    const FOLLOW = "Follow new text: don't write b.txt"
+    const ELSEWHERE = "Follow the new message \u2014 B only prints and reports the number; something outside the job writes numbers/b.txt"
+    const ORIGINAL = "Keep original: write b.txt (Recommended)"
+    expect(keepsText(FOLLOW)).toBe(true)
+    expect(keepsText(ELSEWHERE)).toBe(true)
+    expect(keepsText(ORIGINAL)).toBe(false)
+    expect(answerOf(personAnswer({ fields: [{ key: "q", type: "string", options: options(ORIGINAL, FOLLOW) }] }))).toEqual({ q: "o1" })
+    expect(answerOf(personAnswer({ fields: [{ key: "q", type: "string", options: options(ORIGINAL, ELSEWHERE) }] }))).toEqual({ q: "o1" })
+    const overruled = personAnswer({ fields: [{ key: "q", type: "string", options: options(ORIGINAL, OVERRULE, "Have the half write it anyway") }] })
+    expect(answerOf(overruled)).toEqual({ q: CONFLICT_ANSWER })
+    expect(overruled[0]!.said).toBe(CONFLICT_ANSWER)
+  })
+
+  test("a write by the session itself in any clause overrules, even beside a clause that names a writer elsewhere", () => {
+    expect(keepsText("Keep original: the half writes b.txt, nothing outside")).toBe(false)
+    expect(keepsText("Something outside the job writes numbers/b.txt; the half writes it too")).toBe(false)
+  })
+
   test("a field that takes no words gets its default, or is left out", () => {
     expect(answerOf(personAnswer({ fields: [{ key: "n", type: "number", default: 3 }, { key: "b", type: "boolean" }] }))).toEqual({ n: 3 })
   })

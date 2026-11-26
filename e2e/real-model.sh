@@ -52,12 +52,18 @@ case $SCENARIO in
     CHECKER=real-model-recursive.mjs
     CHECKER_FLAGS=--staged
     ;;
-  recursive-finding | recursive-conflict)
-    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `for i in $(seq 150); do [ -e .go-halves ] && break; sleep 1; done; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `for i in $(seq 150); do [ -e .go-halves ] && break; sleep 1; done; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `for i in $(seq 150); do [ -e .go-count ] && break; sleep 1; done; echo $((99 - 57))` and writes the number it printed to count/total.txt. Another process, outside this job, creates .go-halves and .go-count when those commands may go on: no session creates, removes or looks at those files, and each command is run exactly as written. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
+  recursive-finding | recursive-conflict | recursive-withdrawn)
+    COUNT_WAIT='for i in $(seq 150); do [ -e .go-count ] && break; sleep 1; done; echo $((99 - 57))`'
+    [ "$SCENARIO" != recursive-withdrawn ] || COUNT_WAIT='for i in $(seq 600); do [ -e .go-count ] && break; sleep 1; done; echo $((99 - 57))`, giving the shell tool a timeout of 600000 milliseconds for it,'
+    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `for i in $(seq 150); do [ -e .go-halves ] && break; sleep 1; done; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `for i in $(seq 150); do [ -e .go-halves ] && break; sleep 1; done; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `'"$COUNT_WAIT"' and writes the number it printed to count/total.txt. Another process, outside this job, creates .go-halves and .go-count when those commands may go on: no session creates, removes or looks at those files, and each command is run exactly as written. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
     if [ "$SCENARIO" = recursive-conflict ]; then
       export COURIER_EXPECT=${COURIER_EXPECT:-"391 42"}
       export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt count/total.txt"}
       CHECKER_FLAGS=--conflict
+    elif [ "$SCENARIO" = recursive-withdrawn ]; then
+      export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
+      export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
+      CHECKER_FLAGS=--withdrawn
     else
       export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
       export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
@@ -80,7 +86,7 @@ case $SCENARIO in
     export COURIER_TESTS=${COURIER_TESTS:-5}
     CHECKER=real-model-review.mjs
     ;;
-  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, recursive-finding, recursive-conflict, discovery, review, permission or question"; exit 1 ;;
+  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, recursive-finding, recursive-conflict, recursive-withdrawn, discovery, review, permission or question"; exit 1 ;;
 esac
 case ${COURIER_SKILL:-} in
   "") ;;
@@ -155,7 +161,7 @@ fi
 echo "parent prompt: $PROMPT"
 
 post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
-if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ] && [ "$SCENARIO" != recursive-fault ] && [ "$SCENARIO" != recursive-staged ] && [ "$SCENARIO" != recursive-finding ] && [ "$SCENARIO" != recursive-conflict ]; then
+if [ "$SCENARIO" != fanout ] && [[ $SCENARIO != recursive* ]]; then
   parent=$(post session "$(jq -n --arg directory "$WORK/project" '{ location: { directory: $directory } }')" | jq -r '.data.id // empty' || true)
   [ -z "$parent" ] || post "session/$parent/prompt" "$(jq -n --arg text "$PROMPT" '{ text: $text }')" >/dev/null || parent=
 else

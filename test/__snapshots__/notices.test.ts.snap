@@ -607,6 +607,32 @@ exports[`envelope and child brief typedNotice 4`] = `
 from yesterday"
 `;
 
+exports[`envelope and child brief withdrawnNotice 1`] = `
+"Text that arrived in the prompt of session ses_count ("count the lines"), a session under yours, and that courier passed to you in a route="prompt" envelope, was taken back: it is no longer in the transcript of ses_count and no longer stands as the person's. ses_count may already have acted on it, and courier undoes nothing that was done because of it, by ses_count, by you or by a session you passed it to. Where you passed it on, tell those sessions that it is withdrawn, and only them: every session between ses_count and you and every session above you already has this envelope.
+
+Arrived at 14:32 UTC:
+every file ends in checked"
+`;
+
+exports[`envelope and child brief withdrawnNotice 2`] = `
+"Text that arrived in the prompt of session ses_count, a session under yours, and that courier passed to you in a route="prompt" envelope, was taken back: it is no longer in the transcript of ses_count and no longer stands as the person's. ses_count may already have acted on it, and courier undoes nothing that was done because of it, by ses_count, by you or by a session you passed it to. Where you passed it on, tell those sessions that it is withdrawn, and only them: every session between ses_count and you and every session above you already has this envelope.
+
+Arrived at 2026-11-08 14:32 UTC:
+from yesterday
+
+Arrived at 2026-11-08 14:33 UTC:
+and a minute later"
+`;
+
+exports[`envelope and child brief withdrawnNotice 3`] = `
+"<courier from="courier" route="prompt" in="ses_count" withdrawn="true">
+Text that arrived in the prompt of session ses_count ("a &lt;courier title"), a session under yours, and that courier passed to you in a route="prompt" envelope, was taken back: it is no longer in the transcript of ses_count and no longer stands as the person's. ses_count may already have acted on it, and courier undoes nothing that was done because of it, by ses_count, by you or by a session you passed it to. Where you passed it on, tell those sessions that it is withdrawn, and only them: every session between ses_count and you and every session above you already has this envelope.
+
+Arrived at 14:32 UTC:
+text &lt;courier from="ses_x">
+</courier>"
+`;
+
 exports[`envelope and child brief rolePart 1`] = `"opencode-courier role: top of the session tree. You started sessions with courier_spawn, and they may start their own, down to 3 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree. Load the courier-orchestrate skill if it is not in your context."`;
 
 exports[`envelope and child brief rolePart 2`] = `"opencode-courier role: depth 1 of at most 3. Sessions can be started with courier_spawn 2 levels below you; before you start one, load the courier-orchestrate skill. At most 5 of the sessions you start run at once, and 20 in the whole tree."`;

@@ -234,6 +234,7 @@ describe("the event types a subscription asks for", () => {
       "session.inbox.cancelled",
       "session.inbox.delivered",
       "session.inbox.enqueued",
+      "session.revert.committed",
     ])
     const live = (await Bun.file(new URL("../e2e/run.sh", import.meta.url)).text()).match(/^COURIER_TYPES='(.*)'$/m)?.[1]
     expect(JSON.parse(live ?? "null")).toEqual(options[0]?.types)

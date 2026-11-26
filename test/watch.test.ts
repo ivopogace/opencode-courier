@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { envelope } from "../src/kernel/protocol.js"
-import { BRIEF_FIRST_LINE, failureNotice, silentNotice, typedNotice } from "../src/tree/text.js"
+import { BRIEF_FIRST_LINE, failureNotice, silentNotice, typedNotice, withdrawnNotice } from "../src/tree/text.js"
 import { formNotice, formSettledNotice, permissionNotice, permissionSettledNotice as settledNotice } from "../src/person/text.js"
 import { personEvents } from "../src/person/events.js"
 import type { PersonState } from "../src/person/index.js"
@@ -12,7 +12,7 @@ import { shared as relayState } from "../src/person/question/shared.js"
 import { send } from "../src/tree/send.js"
 import { awaited, reportOf } from "../src/tree/report.js"
 import { forgetChild } from "../src/tree/forget.js"
-import { childStore, promptKey, settledKey, toldKey, typedKey, wakeStore } from "../src/tree/store.js"
+import { childStore, passedKey, promptKey, settledKey, toldKey, typedKey, wakeStore } from "../src/tree/store.js"
 import {
   noteDeleted,
   noteInterrupted,
@@ -1464,5 +1464,158 @@ describe("the fan-up of text typed into a spawned session", () => {
     await handle(taken("msg_1"))
     expect(logged).toContain("courier fan-up: could not pass on text typed into ses_leaf: Error: down")
     expect(store.get(promptKey("ses_leaf"))).toEqual({ at: 100 })
+  })
+
+  describe("the text taken back", () => {
+    const PASSED = passedKey("ses_leaf", "msg_1")
+    const reverted = (to: string, id = "evt_r", sessionID = "ses_leaf") => ({ id, type: "session.revert.committed", created: 900, data: { sessionID, to } })
+    const before = { id: "msg_0", type: "user", text: "the task", time: { created: 1 } }
+    const noticeOf = (...texts: { at: number; text: string }[]) =>
+      envelope("courier", withdrawnNotice("ses_leaf", "Leaf", 1_000_000, texts), { route: "prompt", in: "ses_leaf", withdrawn: "true" })
+
+    async function passed(texts: Record<string, string> = { msg_1: "PERSON-SAYS" }) {
+      const made = await finished()
+      await made.children.prompted("ses_leaf", 100)
+      for (const [inboxID, text] of Object.entries(texts)) {
+        await made.handle(item(inboxID, text))
+        await made.handle({ ...taken(inboxID), created: 600 + Number(inboxID.slice(4)) })
+      }
+      made.sent.length = 0
+      made.transcripts.set("ses_leaf", [before])
+      return made
+    }
+
+    test("the fan-up keeps what it passed, to whom and when, with the start of a long text", async () => {
+      const { store } = await passed()
+      expect(store.get(PASSED)).toEqual({ at: 500, text: "PERSON-SAYS", to: ["ses_mid", "ses_root"], delivered: 601 })
+
+      const long = await passed({ msg_1: `${"word ".repeat(60)}end` })
+      expect((long.store.get(PASSED) as { text: string }).text).toBe(`${"word ".repeat(40).trimEnd()}… [104 more characters]`)
+    })
+
+    test("a revert that removes passed text tells each session it was passed to once, parent first, and forgets it", async () => {
+      const { sent, store, logged, handle, ports } = await passed()
+      await handle(reverted("msg_1"))
+
+      expect(sent).toEqual(
+        ["ses_mid", "ses_root"].map((sessionID) => ({
+          sessionID,
+          text: noticeOf({ at: 500, text: "PERSON-SAYS" }),
+          description: "Text typed into ses_leaf was taken back",
+          metadata: { source: "courier", route: "prompt", in: "ses_leaf", withdrawn: true },
+          delivery: "steer",
+        })),
+      )
+      expect(sent[0].text).toStartWith('<courier from="courier" route="prompt" in="ses_leaf" withdrawn="true">\n')
+      for (const sessionID of ["ses_mid", "ses_root"]) expect(await wakeStore(ports.storage).of(sessionID)).toHaveLength(1)
+      expect(store.has(PASSED)).toBe(false)
+      expect(logged).toContain("courier fan-up: text taken back in ses_leaf told to 2 sessions")
+
+      await handle(reverted("msg_1", "evt_r2"))
+      expect(sent).toHaveLength(2)
+    })
+
+    test("two subscriptions tell once", async () => {
+      const { sent, store, handle } = await passed()
+      const get = store.get.bind(store)
+      await Promise.all([handle(reverted("msg_1")), handle(reverted("msg_1"))])
+      expect(envelopes(sent)).toEqual(["ses_mid", "ses_root"])
+      expect(get(PASSED)).toBeUndefined()
+    })
+
+    test("a revert that leaves the message tells nobody and keeps what was passed", async () => {
+      const { sent, store, transcripts, handle } = await passed()
+      transcripts.set("ses_leaf", [before, { id: "msg_1", type: "user", text: "PERSON-SAYS", time: { created: 601 } }])
+      await handle(reverted("msg_9"))
+      expect(sent).toEqual([])
+      expect(store.has(PASSED)).toBe(true)
+    })
+
+    test("a revert to an earlier message takes back every passed text after it, in one notice each", async () => {
+      const { sent, store, handle } = await passed({ msg_1: "FIRST", msg_2: "SECOND" })
+      await handle(reverted("msg_0"))
+      expect(envelopes(sent)).toEqual(["ses_mid", "ses_root"])
+      expect(sent[0].text).toBe(noticeOf({ at: 500, text: "FIRST" }, { at: 500, text: "SECOND" }))
+      expect([...store.keys()].filter((key) => key.startsWith("passed/"))).toEqual([])
+    })
+
+    test("a revert to the later of two texts leaves the earlier one standing", async () => {
+      const { sent, store, transcripts, handle } = await passed({ msg_1: "FIRST", msg_2: "SECOND" })
+      transcripts.set("ses_leaf", [before, { id: "msg_1", type: "user", text: "FIRST", time: { created: 601 } }])
+      await handle(reverted("msg_2"))
+      expect(sent[0].text).toBe(noticeOf({ at: 500, text: "SECOND" }))
+      expect([...store.keys()].filter((key) => key.startsWith("passed/"))).toEqual([PASSED])
+    })
+
+    test("text from before the compaction the transcript starts at is not read as taken back", async () => {
+      const { sent, store, transcripts, handle } = await passed({ msg_1: "BEFORE", msg_2: "AFTER" })
+      transcripts.set("ses_leaf", [{ id: "msg_c", type: "compaction", time: { created: 602 } }])
+      await handle(reverted("msg_9"))
+      expect(sent[0].text).toBe(noticeOf({ at: 500, text: "AFTER" }))
+      expect([...store.keys()].filter((key) => key.startsWith("passed/"))).toEqual([PASSED])
+    })
+
+    test("when the transcript cannot be read, only the message the revert names counts, and it is logged", async () => {
+      const { sent, logged, ports, handle } = await passed({ msg_1: "FIRST", msg_2: "SECOND" })
+      const context = ports.session.context
+      ;(ports.session as any).context = (input: { sessionID: string }) => (input.sessionID === "ses_leaf" ? Promise.reject(new Error("down")) : context(input as never))
+      await handle(reverted("msg_1"))
+      expect(sent[0].text).toBe(noticeOf({ at: 500, text: "FIRST" }))
+      expect(logged.join("\n")).toContain("courier fan-up: could not read the transcript of ses_leaf, so only the message its revert names counts as taken back: Error: down")
+    })
+
+    test("a session with no passed text tells nobody, and its revert is not remembered", async () => {
+      const { sent, state, handle } = await finished()
+      for (const sessionID of ["ses_leaf", "ses_root", "ses_other"]) await handle(reverted("msg_1", `evt_${sessionID}`, sessionID))
+      expect(sent).toEqual([])
+      expect(state.seen.size).toBe(0)
+    })
+
+    test("a finished tree tells nobody, logs it and forgets what was passed", async () => {
+      const { sent, store, logged, children, ports, handle } = await passed()
+      await children.settled("ses_leaf", "report", 700, "done")
+      for (const sessionID of ["ses_mid", "ses_root"]) await wakeStore(ports.storage).remove(sessionID, "msg_1")
+      await handle(reverted("msg_1"))
+      expect(sent).toEqual([])
+      expect(logged).toContain("courier fan-up: text taken back in ses_leaf reached nobody: the tree has finished")
+      expect(store.has(PASSED)).toBe(false)
+    })
+
+    test("a session the text did not reach is not told, and a failing notice does not stop the others", async () => {
+      const made = await finished()
+      await made.children.prompted("ses_leaf", 100)
+      const failAtMid = (ports: WatchPorts) => {
+        const synthetic = ports.session.synthetic
+        ;(ports.session as any).synthetic = (input: { sessionID: string }) => (input.sessionID === "ses_mid" ? Promise.reject(new Error("gone")) : synthetic(input as never))
+      }
+      failAtMid(made.ports)
+      await made.type()
+      expect(made.store.get(PASSED)).toMatchObject({ to: ["ses_root"] })
+      made.sent.length = 0
+      made.transcripts.set("ses_leaf", [before])
+      await made.handle(reverted("msg_1"))
+      expect(envelopes(made.sent)).toEqual(["ses_root"])
+
+      const { sent, logged, ports, handle } = await passed()
+      failAtMid(ports)
+      await handle(reverted("msg_1"))
+      expect(envelopes(sent)).toEqual(["ses_root"])
+      expect(logged).toContain("courier fan-up: could not tell ses_mid that text typed into ses_leaf was taken back: Error: gone")
+      expect(logged).toContain("courier fan-up: text taken back in ses_leaf told to 1 sessions")
+    })
+
+    test("text that reached nobody leaves nothing to take back", async () => {
+      const { store, type } = await finished()
+      await type()
+      expect([...store.keys()].filter((key) => key.startsWith("passed/"))).toEqual([])
+    })
+
+    test("the notice is unowed at an ancestor: delivering it asks for no new report", async () => {
+      const { handle, store } = await finished()
+      const metadata = { source: "courier", route: "prompt", in: "ses_leaf", withdrawn: true }
+      await handle({ id: "evt_e", type: "session.inbox.enqueued", created: 700, data: { sessionID: "ses_mid", inboxID: "msg_e", item: { type: "synthetic", payload: { text: "t", metadata } } } })
+      await handle({ id: "evt_d", type: "session.inbox.delivered", created: 800, data: { sessionID: "ses_mid", inboxID: "msg_e" } })
+      expect(store.get(promptKey("ses_mid"))).toEqual({ at: 10 })
+    })
   })
 })

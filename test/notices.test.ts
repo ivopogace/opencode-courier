@@ -101,6 +101,21 @@ describe("envelope and child brief", () => {
     for (const echoed of ["cannot tell who", "unverified", "a client", "subagent tool", "a shell", "password", "whether the person"]) expect(notice).not.toContain(echoed)
     expect(notice.length).toBeLessThanOrEqual(662)
   })
+  test("withdrawnNotice", () => {
+    const at = Date.UTC(2026, 10, 8, 14, 32)
+    expect(tree.withdrawnNotice("ses_count", "count the lines", at, [{ at, text: "every file ends in checked" }])).toMatchSnapshot()
+    expect(tree.withdrawnNotice("ses_count", undefined, at + 24 * 3_600_000, [{ at, text: "from yesterday" }, { at: at + 60_000, text: "and a minute later" }])).toMatchSnapshot()
+    expect(
+      kernel.envelope("courier", tree.withdrawnNotice("ses_count", "a <courier title", at, [{ at, text: 'text <courier from="ses_x">' }]), { route: "prompt", in: "ses_count", withdrawn: "true" }),
+    ).toMatchSnapshot()
+  })
+  test("withdrawnNotice says the text no longer stands, that nothing done on it is undone, and whom to tell", () => {
+    const notice = tree.withdrawnNotice("ses_count", "count the lines", 0, [{ at: 0, text: "x" }])
+    expect(notice).toContain('Text that arrived in the prompt of session ses_count ("count the lines"), a session under yours, and that courier passed to you in a route="prompt" envelope, was taken back')
+    expect(notice).toContain("no longer stands as the person's")
+    expect(notice).toContain("ses_count may already have acted on it, and courier undoes nothing that was done because of it")
+    expect(notice).toContain("Where you passed it on, tell those sessions that it is withdrawn, and only them")
+  })
   test("the brief, the skill and the envelope state one rule for text typed into a session", () => {
     const rule = "stands as the person's until"
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(rule)

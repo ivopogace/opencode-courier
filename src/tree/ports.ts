@@ -29,6 +29,12 @@ export interface Typed {
   readonly text: string
 }
 
+export interface Passed extends Typed {
+  readonly inboxID: string
+  readonly to: ReadonlyArray<string>
+  readonly delivered: number
+}
+
 export interface ChildStore {
   record(entry: RosterEntry): Promise<void>
   remove(parentID: string, sessionID: string): Promise<void>
@@ -60,6 +66,9 @@ export interface ChildStore {
   typedOf(sessionID: string, inboxID: string): Promise<Typed | undefined>
   forgetTyped(sessionID: string, inboxID?: string): Promise<void>
   typedSessions(): Promise<ReadonlySet<string>>
+  passed(sessionID: string, passed: Passed): Promise<void>
+  passedOf(sessionID: string): Promise<Passed[]>
+  forgetPassed(sessionID: string, inboxIDs: ReadonlyArray<string>): Promise<void>
 }
 
 export interface Wake {

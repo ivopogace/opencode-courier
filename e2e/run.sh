@@ -292,7 +292,7 @@ WEBHOOK_SECRET=courier-e2e-webhook-secret
 printf '%s\n' "$WEBHOOK_SECRET" >"$WORK/webhook-secret"
 build_plugin
 
-COURIER_TYPES='["form.cancelled","form.created","form.replied","location.shutdown","permission.asked","permission.replied","session.deleted","session.execution.failed","session.execution.interrupted","session.execution.started","session.execution.succeeded","session.inbox.cancelled","session.inbox.delivered","session.inbox.enqueued"]'
+COURIER_TYPES='["form.cancelled","form.created","form.replied","location.shutdown","permission.asked","permission.replied","session.deleted","session.execution.failed","session.execution.interrupted","session.execution.started","session.execution.succeeded","session.inbox.cancelled","session.inbox.delivered","session.inbox.enqueued","session.revert.committed"]'
 
 cat >"$WORK/project/opencode.json" <<EOF
 {

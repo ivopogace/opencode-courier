@@ -9,7 +9,7 @@ import { owedUnwaited } from "./nudge.js"
 import { reportedSincePrompt, stoppedSincePrompt } from "./report.js"
 import { syncStanding } from "./standing.js"
 import { childStore } from "./store.js"
-import { forgetTyped, noteTyped, relayTyped } from "./relay.js"
+import { forgetTyped, noteTyped, relayTyped, relayWithdrawn, type Reverted } from "./relay.js"
 import { lastReply } from "./status.js"
 import { failureNotice, silentNotice } from "./text.js"
 import { forgetWakes, settleWake, wakeEnded, wakeStarted, watchWake, type Enqueued, type Execution, type InboxSettled } from "./wake.js"
@@ -198,6 +198,7 @@ const TREE_TYPES = [
   "session.inbox.enqueued",
   "session.inbox.delivered",
   "session.inbox.cancelled",
+  "session.revert.committed",
   "session.deleted",
 ] as const satisfies readonly EventType[]
 
@@ -222,6 +223,7 @@ function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: 
   if (event.type === "session.inbox.enqueued") return inboxEnqueued(ports, state, event as unknown as Enqueued)
   if (event.type === "session.inbox.delivered") return inboxDelivered(ports, state, event as unknown as SessionEvent & InboxSettled)
   if (event.type === "session.inbox.cancelled") return forgetTyped(ports, event as unknown as InboxSettled)
+  if (event.type === "session.revert.committed") return relayWithdrawn(ports, state.seen, event as unknown as Reverted)
   if (event.type === "session.deleted") return noteDeleted(ports, event as unknown as SessionEvent)
   return undefined
 }

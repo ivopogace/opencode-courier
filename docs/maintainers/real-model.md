@@ -194,9 +194,10 @@ each session above has passed the text on or will not, and the checker takes it 
 `revert/stage` at the typed message with `files: false`, then `revert/commit`. OpenCode refuses a
 revert in a running session, so the half has acted by then, as the envelope says it may have; its
 transcript ends at the message before the text, and the files stay. "count" stays in its wait until
-each session that had the text has the withdrawal envelope and has ended its turn, or until 30 s
-have passed without one; the log says which. So the tree is at work when the revert comes, and
-"count" writes its file only after the withdrawal could reach it.
+the sessions above the half have ended their turns again and each that had the text has the
+withdrawal envelope, or 30 s have passed since the revert without one; the log says which. So the
+tree is at work when the revert comes, and "count" writes its file only after the withdrawal could
+reach it.
 
 **The checks.** Each session that got the typed-text envelope gets one withdrawal envelope, and no
 other session gets one. A session that had passed the text on messages every session it passed it

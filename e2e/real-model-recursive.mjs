@@ -2,6 +2,9 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
   CONFLICT_FILE,
+  COUNT_FILE,
+  STANDS_ANSWER,
+  WITHDRAWN_ANSWER,
   answerOf,
   GO_COUNT,
   GO_HALVES,
@@ -14,11 +17,14 @@ import {
   isHalfB,
   passedDown,
   personAnswer,
+  personWords,
   questionsOf,
   plainAfter,
   releaseOf,
   reportsTo,
+  rests,
   sendersOf,
+  sendsOf,
   sendsTo,
   settled,
   spawnsOf,
@@ -28,6 +34,9 @@ import {
   toldHalfOf,
   toolsOf,
   typedAt,
+  withdrawal,
+  withdrawalOf,
+  withdrawalsAt,
 } from "./real-model-recursive-release.mjs"
 
 const [rootID, ...flags] = process.argv.slice(2)
@@ -47,6 +56,7 @@ const fault = flags.includes("--fault") || (saved && savedFlag("fault"))
 const staged = flags.includes("--staged") || (saved && savedFlag("staged"))
 const finding = flags.includes("--finding") || (saved && savedFlag("finding"))
 const conflict = flags.includes("--conflict") || (saved && savedFlag("conflict"))
+const withdrawn = flags.includes("--withdrawn") || (saved && savedFlag("withdrawn"))
 const PERSON_NOTE =
   "A change from the person for the whole job, not only for your part: every file this job writes must hold its number " +
   "followed by a space and the word checked, such as 7 checked. Write yours that way."
@@ -129,6 +139,16 @@ async function tellAsPerson(sessionID, text, who) {
   if (!response.ok) throw new Error(`the person's message to ${sessionID}: HTTP ${response.status}`)
   console.log(`  (told ${sessionID}, ${who}, as the person: ${text})`)
 }
+async function takeBack({ sessionID, messageID, last }) {
+  const post = (step, body) =>
+    fetch(`${server}/api/session/${sessionID}/revert/${step}`, { method: "POST", headers: { authorization: auth, "content-type": "application/json" }, body: JSON.stringify(body) })
+  const staged = await post("stage", { messageID, files: false })
+  if (!staged.ok) throw new Error(`staging the revert at ${messageID} in ${sessionID}: HTTP ${staged.status}`)
+  const committed = await post("commit", {})
+  if (!committed.ok) throw new Error(`committing the revert in ${sessionID}: HTTP ${committed.status}`)
+  console.log(`  (took the text back in ${sessionID} as the person: a revert staged at ${messageID} with files: false, then committed)`)
+  return { sessionID, messageID, last, at: Date.now() }
+}
 
 const answers = saved ? (savedField("answers") ?? []) : []
 const answeredForms = new Set()
@@ -137,7 +157,7 @@ async function answerRoot() {
   if (!response.ok) throw new Error(`forms of ${rootID}: HTTP ${response.status}`)
   for (const form of (await response.json()).data ?? []) {
     if (answeredForms.has(form.id)) continue
-    const picks = personAnswer(form)
+    const picks = withdrawn ? personWords(form, takenBack ? WITHDRAWN_ANSWER : STANDS_ANSWER) : personAnswer(form)
     const reply = await fetch(`${server}/api/session/${rootID}/form/${form.id}/reply`, {
       method: "POST",
       headers: { authorization: auth, "content-type": "application/json" },
@@ -166,10 +186,12 @@ let quietSince
 let tree = new Map()
 let told = false
 let contradicted = false
+let typed
+let takenBack = saved ? savedField("takenBack") : undefined
 for (;;) {
   let done = false
   try {
-    if (conflict && !saved) await answerRoot().catch((error) => console.log(`  (could not answer the root's forms, trying again: ${error.message})`))
+    if ((conflict || withdrawn) && !saved) await answerRoot().catch((error) => console.log(`  (could not answer the root's forms, trying again: ${error.message})`))
     tree = await readTree()
     const count = finding && !saved && !told ? [...tree].find(([, entry]) => entry.depth === 1 && isCount(entry.list) && hasRun(entry.list) && !settled(entry.list)) : undefined
     if (count) {
@@ -179,22 +201,27 @@ for (;;) {
     }
     if (conflict && !saved && [...tree.values()].some((entry) => entry.depth === 1 && isCount(entry.list) && hasRun(entry.list))) go(GO_COUNT, 'the "count" session runs')
     const halfB =
-      conflict && !saved && !contradicted
+      (conflict || withdrawn) && !saved && !contradicted
         ? [...tree].find(([, entry]) => entry.depth === 2 && isHalfB(entry.list) && hasRun(entry.list) && !settled(entry.list) && reportsTo(entry.list, entry.parentID).length === 0)
         : undefined
     if (halfB) {
-      await tellAsPerson(halfB[0], CONFLICT_NOTE, `the half for ${CONFLICT_FILE}`)
+      await tellAsPerson(halfB[0], withdrawn ? PERSON_NOTE : CONFLICT_NOTE, `the half for ${CONFLICT_FILE}`)
       contradicted = true
+      if (withdrawn) typed = { sessionID: halfB[0], text: PERSON_NOTE }
       go(GO_HALVES, `the half for ${CONFLICT_FILE} has been told as the person`)
     }
+    const step = withdrawn && !saved ? withdrawalOf(tree, { typed, takenBack, created }, Date.now()) : undefined
+    if (step?.takeBack) takenBack = await takeBack(step.takeBack).catch((error) => console.log(`  (could not take the text back, trying again: ${error.message})`))
+    if (step?.release) go(GO_COUNT, step.release)
     const countNow = countIdOf(tree)
     const parts = [...tree].filter(([id, entry]) => entry.depth === 1 && id !== countNow).map(([, entry]) => entry)
     if (told && parts.length > 0 && parts.every((entry) => passedDown(entry, rootID))) go(GO_HALVES, "the finding has come down to each session of the other part")
-    const release = saved ? undefined : releaseOf(tree, rootID, { finding, conflict, told, created })
+    const release = saved || typed ? undefined : releaseOf(tree, rootID, { finding, conflict, withdrawn, told, created })
     if (release) go(release.file, release.why)
     const spawned = [...tree].filter(([id]) => id !== rootID)
     const reported = spawned.filter(([id, entry]) => deliveriesFrom(tree.get(entry.parentID).list, id).length > 0)
-    const quiet = [...tree.values()].every((entry) => settled(entry.list))
+    const held = typed !== undefined && !created.includes(GO_COUNT)
+    const quiet = !held && [...tree].every(([id, entry]) => rests(id, entry, takenBack))
     quietSince = quiet ? (quietSince ?? Date.now()) : undefined
     done = saved || (quiet && (reported.length === spawned.length || Date.now() - quietSince >= GRACE_MS))
   } catch (error) {
@@ -234,7 +261,8 @@ function describe(id, indent) {
     }
     if (ended(turn.at(-1))) lines.push(`${pad}  -- turn ended (${turn.at(-1).finish ?? turn.at(-1).outcome})`)
   }
-  if (!settled(entry.list)) lines.push(`${pad}  -- still running`)
+  if (!settled(entry.list))
+    lines.push(rests(id, entry, takenBack) ? `${pad}  -- the text typed here was taken back, and every message after it went with it` : `${pad}  -- still running`)
   for (const child of spawnsOf(entry.list)) if (tree.has(child)) describe(child, indent + 2)
 }
 describe(rootID, 0)
@@ -292,9 +320,10 @@ const reportedBy = (child, to, at) => {
 }
 const reminded = (message) => message.type === "synthetic" && (message.text ?? "").includes(' reminder="report"')
 const corrects = (list, previous, send) => {
-  const remindedBetween = list.slice(previous.index + 1, send.index).some(reminded)
+  const between = list.slice(previous.index + 1, send.index)
+  const remindedBetween = between.some(reminded)
   const later = spawnsOf(list).flatMap((child) => deliveriesFrom(list, child).slice(1)).filter((delivery) => delivery.index > previous.index && delivery.index < send.index)
-  return previous.status === "done" && later.some((delivery) => statusOf(delivery.message) !== "done" || !remindedBetween)
+  return previous.status === "done" && (between.some(withdrawal) || later.some((delivery) => statusOf(delivery.message) !== "done" || !remindedBetween))
 }
 const reportedAfterChildren = ([id, entry]) => {
   const own = reportsTo(entry.list, entry.parentID)
@@ -416,6 +445,10 @@ const toHalf = !halfID
       const after = typedAt(entry.list, halfID)
       return after === -1 ? [] : sendsTo(entry.list, halfID).filter((send) => send.index > after).map((send) => ({ id, message: send.message ?? "" }))
     })
+const ENVELOPE_CHECK = [
+  "the plugin's envelope naming the half reached the session that started it and the root",
+  halfID !== undefined && halfParent !== undefined && typedAt(halfParent.list, halfID) !== -1 && typedAt(root, halfID) !== -1,
+]
 const conflictChecks = [
   [
     `the files hold the expected values, and ${CONFLICT_FILE} does not exist`,
@@ -424,8 +457,37 @@ const conflictChecks = [
   ["the half's report to its parent holds 1024", halfReports.some((report) => (report.message ?? "").includes("1024"))],
   ["the root's final reply names the file and says why it was left", /b\.txt/i.test(finalText) && /typed|told|instruct|outside|person/i.test(finalText)],
   ["the words reached the half as a user item", halfEntry !== undefined && halfEntry.list.some((message) => message.type === "user" && message.text?.includes(CONFLICT_NOTE))],
-  ["the plugin's envelope naming the half reached the session that started it and the root", halfID !== undefined && halfParent !== undefined && typedAt(halfParent.list, halfID) !== -1 && typedAt(root, halfID) !== -1],
+  ENVELOPE_CHECK,
   [`no session wrote ${CONFLICT_FILE}`, conflictWriters.length === 0],
+]
+
+const holders = halfID === undefined ? [] : [...tree].filter(([, entry]) => typedAt(entry.list, halfID) !== -1)
+const tellings = holders.map(([id, entry]) => {
+  const withdrawals = withdrawalsAt(entry.list, halfID)
+  const until = withdrawals[0] ?? Infinity
+  const sends = sendsOf(entry.list).filter((send) => send.to !== halfID && !(send.status && send.to === entry.parentID))
+  const passed = sends.filter((send) => send.index > typedAt(entry.list, halfID) && send.index < until)
+  return { id, until, withdrawals: withdrawals.length, passed, passedTo: [...new Set(passed.map((send) => send.to))], after: sends.filter((send) => send.index > until) }
+})
+const reached = tellings.filter((one) => one.withdrawals > 0)
+const withdrawnChecks = [
+  [
+    "the half the envelope names no longer holds the text in its transcript: the revert took it back",
+    toldHalf !== undefined && !halfEntry.list.some((message) => message.type === "user" && message.text?.includes(PERSON_NOTE)),
+  ],
+  ENVELOPE_CHECK,
+  [
+    "each session that got that envelope got one withdrawal envelope, and no other session got one",
+    holders.length > 0 && [...tree].every(([id, entry]) => withdrawalsAt(entry.list, halfID).length === (holders.some(([holder]) => holder === id) ? 1 : 0)),
+  ],
+  [
+    "each session that had passed the text on messaged every session it passed it to, once the withdrawal reached it",
+    reached.length > 0 && reached.every((one) => one.passedTo.every((to) => one.after.some((send) => send.to === to))),
+  ],
+  [
+    "no session the withdrawal reached then messaged a session it had not passed the text to, the half aside",
+    reached.length > 0 && reached.every((one) => one.after.every((send) => one.passedTo.includes(send.to))),
+  ],
 ]
 
 const checks = [
@@ -445,13 +507,19 @@ const checks = [
   ...(conflict
     ? []
     : [
-        ["the files hold the expected values", files.length > 0 && files.length === expected.length && fileTexts.every((text, index) => text === fileExpected[index])],
+        withdrawn
+          ? [
+              `the files hold their numbers: ${COUNT_FILE} as the task gave it, the others with or without the word the text asked for`,
+              files.length > 0 && files.length === expected.length && fileTexts.every((text, index) => text === expected[index] || (files[index] !== COUNT_FILE && text === `${expected[index]}${SUFFIX}`)),
+            ]
+          : ["the files hold the expected values", files.length > 0 && files.length === expected.length && fileTexts.every((text, index) => text === fileExpected[index])],
         ["the root's final reply holds every expected result", expected.length > 0 && expected.every((value) => finalText.includes(value))],
       ]),
   ...(fault ? faultChecks : []),
   ...(staged ? stagedChecks : []),
   ...(finding ? findingChecks : []),
   ...(conflict ? conflictChecks : []),
+  ...(withdrawn ? withdrawnChecks : []),
 ]
 
 const notes = []
@@ -491,18 +559,46 @@ if (finding) {
   else notes.push(`finding: the "count" session did not send the words up itself${countReport ? `; its report: ${short(countReport.message ?? "", 200)}` : ""}`)
   for (const send of toCount) notes.push(`finding: ${send.id === rootID ? "the root" : `session ${send.id}`} messaged the "count" session after the envelope: ${short(send.message, 200)}`)
 }
+const who = (id) => (id === rootID ? "the root" : `session ${id}`)
 if (conflict) {
-  const who = (id) => (id === rootID ? "the root" : `session ${id}`)
   if (!halfID) notes.push(`conflict: no session at depth 2 has the task for ${CONFLICT_FILE}`)
   for (const send of toHalf)
     notes.push(`conflict: ${who(send.id)} messaged the half after the envelope${COUNTERMANDS.some((pattern) => pattern.test(send.message)) ? " (possible countermand)" : ""}: ${short(send.message, 200)}`)
   if (halfID && !toHalf.length) notes.push("conflict: no session above the half messaged it after the envelope")
   for (const id of conflictWriters) notes.push(`conflict: ${who(id)} wrote ${CONFLICT_FILE}`)
+}
+if (withdrawn) {
+  const arrivals = reached.map((one) => tree.get(one.id).list[one.until].time?.created).filter((at) => at !== undefined)
+  const since = arrivals.length ? Math.min(...arrivals) : Infinity
+  const after = (id, list, index, at) => {
+    const own = reached.find((one) => one.id === id)
+    return own ? index > own.until : at >= since
+  }
+  if (!halfID) notes.push(`withdrawn: no session at depth 2 has the task for ${CONFLICT_FILE}`)
+  notes.push(takenBack ? `withdrawn: the checker took the text back in ${takenBack.sessionID} with a revert staged at ${takenBack.messageID}, then committed` : "withdrawn: the checker took no text back in this run")
+  for (const one of tellings) {
+    for (const send of one.passed) notes.push(`withdrawn: ${who(one.id)} passed the text on to ${send.to}: ${short(send.message ?? "", 200)}`)
+    if (!one.passed.length) notes.push(`withdrawn: ${who(one.id)} passed the text on to nobody`)
+  }
+  if (holders.length && !reached.length) notes.push("withdrawn: no session got a withdrawal envelope")
+  const later = [...tree].flatMap(([id, entry]) => sendsOf(entry.list).filter((send) => after(id, entry.list, send.index, sendStart(entry.list, send))).map((send) => ({ id, send })))
+  for (const { id, send } of later)
+    notes.push(`withdrawn: ${who(id)} sent ${send.to === halfID ? "the half" : send.to} a ${send.status ? `report (${send.status})` : "message"} after the withdrawal: ${short(send.message ?? "", 200)}`)
+  if (reached.length && !later.length) notes.push("withdrawn: no session sent a message after the withdrawal")
+  for (const file of files) {
+    const writes = writesFile(file)
+    for (const [id, entry] of tree)
+      if (entry.list.some((message, index) => message.type === "assistant" && message.content.some((part) => writes(part) && after(id, entry.list, index, partEnd(part, message)))))
+        notes.push(`withdrawn: ${who(id)} wrote ${file} after the withdrawal`)
+  }
+}
+if (conflict || withdrawn) {
+  const mode = conflict ? "conflict" : "withdrawn"
   const asks = [...tree].flatMap(([id, entry]) => toolsOf(entry.list).filter((part) => part.name === "question").map((part) => ({ id, part })))
-  for (const { id, part } of asks) notes.push(`conflict: ${who(id)} asked the person with its question tool (${part.state.status}): ${short(questionsOf(part), 300)}`)
-  if (!asks.length) notes.push("conflict: no session asked the person with its question tool")
+  for (const { id, part } of asks) notes.push(`${mode}: ${who(id)} asked the person with its question tool (${part.state.status}): ${short(questionsOf(part), 300)}`)
+  if (!asks.length) notes.push(`${mode}: no session asked the person with its question tool`)
   for (const { form, picks } of answers)
-    notes.push(`conflict: the person answered the root's form ${form}: ${short(picks.map((pick) => `${pick.question ? `"${pick.question}" ` : ""}-> ${pick.said}`).join("; "), 300)}`)
+    notes.push(`${mode}: the person answered the root's form ${form}: ${short(picks.map((pick) => `${pick.question ? `"${pick.question}" ` : ""}-> ${pick.said}`).join("; "), 300)}`)
 }
 if (fault && !faulty.length) notes.push("fault: every session below a sub-orchestrator first reported done; the fault did not reach a leaf")
 if (staged) {
@@ -585,7 +681,7 @@ console.log(`result: ${verdict}${verdict === "inconclusive" ? " (checks failed, 
 writeFileSync(
   join(work, "summary.json"),
   JSON.stringify(
-    { verdict, rootID, fault, staged, finding, conflict, ...(conflict ? { answers } : {}), sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
+    { verdict, rootID, fault, staged, finding, conflict, withdrawn, ...(conflict || withdrawn ? { answers } : {}), ...(takenBack ? { takenBack } : {}), sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
     null,
     2,
   ),

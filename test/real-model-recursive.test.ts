@@ -59,10 +59,10 @@ function transcripts(variant: Variant): Record<string, Message[]> {
   return { ses_root: root, ses_num: num, ses_a: a, ses_b: b, ses_count: count }
 }
 
-type Run = { tree: Record<string, Message[]>; files: Record<string, string>; config?: unknown; expect?: string }
+type Run = { tree: Record<string, Message[]>; files: Record<string, string>; config?: unknown; expect?: string; summary?: unknown }
 
 function check(variant: Variant | Run, ...runs: string[][]) {
-  const { tree, files, config, expect: expected } = typeof variant === "string" ? { tree: transcripts(variant), files: FILES, config: undefined, expect: undefined } : variant
+  const { tree, files, config, expect: expected, summary: recorded } = typeof variant === "string" ? { tree: transcripts(variant), files: FILES, config: undefined, expect: undefined, summary: undefined } : variant
   const work = mkdtempSync(join(tmpdir(), "rmr-"))
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("COURIER_")))
   try {
@@ -72,6 +72,7 @@ function check(variant: Variant | Run, ...runs: string[][]) {
       writeFileSync(join(work, "project", file), `${text}\n`)
     }
     if (config) writeFileSync(join(work, "project", "opencode.json"), JSON.stringify(config))
+    if (recorded) writeFileSync(join(work, "summary.json"), JSON.stringify(recorded))
     let exitCode: number | null = null
     for (const flags of runs.length ? runs : [[]]) {
       const run = Bun.spawnSync([process.execPath, CHECKER, "ses_root", "--saved", ...flags], {
@@ -80,7 +81,7 @@ function check(variant: Variant | Run, ...runs: string[][]) {
       if (run.exitCode !== 0 && run.exitCode !== 1) throw new Error(`the checker exited ${run.exitCode}: ${run.stderr.toString()}`)
       exitCode = run.exitCode
     }
-    const summary = JSON.parse(readFileSync(join(work, "summary.json"), "utf8")) as { verdict: string; fault: boolean; staged: boolean; finding: boolean; conflict: boolean; checks: Record<string, boolean>; notes: string[] }
+    const summary = JSON.parse(readFileSync(join(work, "summary.json"), "utf8")) as { verdict: string; fault: boolean; staged: boolean; finding: boolean; conflict: boolean; withdrawn: boolean; takenBack?: unknown; checks: Record<string, boolean>; notes: string[] }
     return { exitCode, ...summary, failed: Object.entries(summary.checks).flatMap(([name, ok]) => (ok ? [] : [name])) }
   } finally {
     rmSync(work, { recursive: true, force: true })
@@ -735,7 +736,7 @@ test("run live with --finding, the checker lets the count part go once it has wr
 }, 20_000)
 
 type Entry = { parentID: string | undefined; depth: number; list: Message[] }
-type ReleaseState = { finding: boolean; conflict: boolean; told: boolean; created: string[] }
+type ReleaseState = { finding: boolean; conflict: boolean; withdrawn?: boolean; told: boolean; created: string[] }
 const { releaseOf } = (await import(pathToFileURL(join(import.meta.dir, "..", "e2e", "real-model-recursive-release.mjs")).href)) as {
   releaseOf: (tree: Map<string, Entry>, rootID: string, state: ReleaseState) => { file: string; why: string } | undefined
 }
@@ -1119,3 +1120,323 @@ describe("the person's answer to a question in --conflict", () => {
     expect(keepsText("Yes")).toBe(false)
   })
 })
+
+const TOLD_ON = "The person changed the job: every file must hold its number followed by the word checked."
+const TOLD_BACK = "The person took that text back: it no longer stands."
+const TO_HALF = "The person took your text back: write numbers/b.txt as your task says."
+const typedIn = () => synthetic(`<courier from="courier" route="prompt" in="ses_b">\nAt 10:00 UTC this text arrived in the prompt of session ses_b, a session under yours.\n\n${PERSON_NOTE}\n</courier>`)
+const takenBackIn = () =>
+  synthetic(`<courier from="courier" route="prompt" in="ses_b" withdrawn="true">\nText that arrived in the prompt of session ses_b was taken back.\n\nArrived at 10:00 UTC:\n${PERSON_NOTE}\n</courier>`)
+const from = (id: string, text: string) => synthetic(`<courier from="${id}">\n${text}\n</courier>`)
+const waited = (file: string) => step("tool-calls", tool("shell", { command: waitCommand(file) }))
+const TAKEN_BACK = { sessionID: "ses_b", messageID: "msg_typed", last: "msg_b_wait", at: 0 }
+type Withdrawn = "passed-on" | "not-passed" | "untold" | "stray" | "to-half" | "no-withdrawal" | "kept" | "corrected"
+
+function withdrawnStages(variant: Withdrawn) {
+  const passed = variant !== "not-passed" && variant !== "stray" && variant !== "corrected"
+  const arrives = variant !== "no-withdrawal"
+  const numTells = passed && arrives
+  const rootTells = numTells && variant !== "untold"
+  const lists: Record<string, Message[]> = { ses_root: [], ses_num: [], ses_a: [], ses_b: [], ses_count: [] }
+  const { ses_root: root, ses_num: num, ses_a: a, ses_b: b, ses_count: count } = lists as Record<"ses_root" | "ses_num" | "ses_a" | "ses_b" | "ses_count", Message[]>
+  const marks: Array<Record<string, number>> = []
+  const mark = () => marks.push(Object.fromEntries(Object.entries(lists).map(([id, list]) => [id, list.length])))
+  root.push(user("the job"), step("tool-calls", loadSkill(), spawn("ses_num"), spawn("ses_count")), step("stop", say("split: 2 parts | numbers, count")), idle())
+  num.push(user("numbers"), step("tool-calls", spawn("ses_a"), spawn("ses_b")), step("stop", say("split: 2 halves")), idle())
+  count.push(user("count: run `echo $((99 - 57))` once .go-count exists, write it to count/total.txt"))
+  a.push(user("half: `echo $((17 * 23))`, write numbers/a.txt"))
+  b.push(user("half: `echo $((2 ** 10))`, write numbers/b.txt"))
+  mark()
+  a.push(waited(".go-halves"), step("tool-calls", write("numbers/a.txt"), send("ses_num", "391", "done")), step("stop", say("Reported.")), idle())
+  b.push({ ...waited(".go-halves"), id: "msg_b_wait" })
+  const cut = b.length
+  b.push({ ...user(PERSON_NOTE), id: "msg_typed" }, step("tool-calls", write("numbers/b.txt"), send("ses_num", "1024 checked", "done")), step("stop", say("Reported.")), idle())
+  num.push(typedIn())
+  root.push(typedIn())
+  if (passed) {
+    num.push(step("tool-calls", send("ses_a", TOLD_ON)), step("stop", say("Passed on.")), idle())
+    a.push(from("ses_num", TOLD_ON), step("tool-calls", write("numbers/a.txt"), send("ses_num", "391 checked", "done")), step("stop", say("Reported.")), idle())
+    root.push(step("tool-calls", send("ses_count", TOLD_ON)), step("stop", say("Passed on.")), idle())
+  } else {
+    num.push(step("stop", say("Noted.")), idle())
+    root.push(step("stop", say("Noted.")), idle())
+  }
+  num.push(...reported([["ses_a", "done"], ["ses_b", "done"]]), ...(passed ? [report("ses_a", "done", "391 checked")] : []))
+  num.push(step("tool-calls", send("ses_root", "391 and 1024", "done")), step("stop", say("Reported.")), idle())
+  root.push(report("ses_num", "done", "391 and 1024"), step("stop", say("Waiting for count.")), idle())
+  mark()
+  const after: Message[] = []
+  if (arrives) {
+    num.push(takenBackIn())
+    root.push(takenBackIn())
+    if (numTells) {
+      num.push(step("tool-calls", send("ses_a", TOLD_BACK), ...(variant === "to-half" ? [send("ses_b", TO_HALF)] : [])), step("stop", say("Told.")), idle())
+      a.push(from("ses_num", TOLD_BACK), step("tool-calls", write("numbers/a.txt"), send("ses_num", "391", "done")), step("stop", say("Reported.")), idle())
+      num.push(report("ses_a", "done", "391"))
+      if (variant === "to-half") {
+        after.push(from("ses_num", TO_HALF), step("tool-calls", write("numbers/b.txt"), send("ses_num", "1024", "done")), step("stop", say("Reported.")), idle())
+        num.push(report("ses_b", "done", "1024"))
+      }
+      num.push(step("stop", say("Noted.")), idle())
+    } else if (variant === "corrected") num.push(step("tool-calls", send("ses_root", "The text was taken back; both files stay as they are.", "done")), step("stop", say("Reported.")), idle())
+    else num.push(step("stop", say("Noted.")), idle())
+    if (rootTells) root.push(step("tool-calls", send("ses_count", TOLD_BACK)), step("stop", say("Told.")), idle())
+    else if (variant === "stray") {
+      root.push(step("tool-calls", send("ses_num", TOLD_BACK)), step("stop", say("Told.")), idle())
+      num.push(from("ses_root", TOLD_BACK), step("stop", say("Noted.")), idle())
+    } else root.push(step("stop", say("Noted.")), idle())
+    if (variant === "corrected") root.push(report("ses_num", "done", "both files stay as they are"), step("stop", say("Noted.")), idle())
+  }
+  mark()
+  const files = {
+    "numbers/a.txt": numTells ? "391" : passed ? "391 checked" : "391",
+    "numbers/b.txt": variant === "to-half" ? "1024" : "1024 checked",
+    "count/total.txt": passed && !rootTells ? "42 checked" : "42",
+  }
+  count.push(waited(".go-count"), ...(passed ? [from("ses_root", TOLD_ON)] : []), ...(rootTells ? [from("ses_root", TOLD_BACK)] : []))
+  count.push(step("tool-calls", write("count/total.txt"), send("ses_root", files["count/total.txt"], "done")), step("stop", say("Reported.")), idle())
+  root.push(report("ses_count", "done", files["count/total.txt"]), step("tool-calls", tool("read", { path: "numbers/a.txt" })), step("stop", say(`RESULTS ${Object.values(files).join(" ")}`)), idle())
+  return { lists, marks, typed: [...b], taken: [...b.slice(0, cut), ...after], files }
+}
+
+function withdrawnRun(variant: Withdrawn): Run {
+  const { lists, typed, taken, files } = withdrawnStages(variant)
+  return { tree: { ...lists, ses_b: variant === "kept" ? typed : taken }, files, expect: Object.values(FILES).join(" "), summary: { takenBack: TAKEN_BACK } }
+}
+
+const W_FILES = "the files hold their numbers: count/total.txt as the task gave it, the others with or without the word the text asked for"
+const W_GONE = "the half the envelope names no longer holds the text in its transcript: the revert took it back"
+const W_ONE = "each session that got that envelope got one withdrawal envelope, and no other session got one"
+const W_TOLD = "each session that had passed the text on messaged every session it passed it to, once the withdrawal reached it"
+const W_ONLY = "no session the withdrawal reached then messaged a session it had not passed the text to, the half aside"
+
+describe("the recursive checker with --withdrawn", () => {
+  test("a withdrawal that was passed on: each session above tells the session it passed the text to, and the notes quote what was sent after it", () => {
+    const run = check(withdrawnRun("passed-on"), ["--withdrawn"])
+    expect(run.failed).toEqual([])
+    expect(run.withdrawn).toBe(true)
+    expect(Object.keys(run.checks)).toHaveLength(14)
+    expect(run.exitCode).toBe(0)
+    expect(run.notes).toContain("withdrawn: the checker took the text back in ses_b with a revert staged at msg_typed, then committed")
+    expect(run.notes).toContain(`withdrawn: session ses_num passed the text on to ses_a: ${TOLD_ON}`)
+    expect(run.notes).toContain(`withdrawn: the root passed the text on to ses_count: ${TOLD_ON}`)
+    expect(run.notes).toContain(`withdrawn: session ses_num sent ses_a a message after the withdrawal: ${TOLD_BACK}`)
+    expect(run.notes).toContain(`withdrawn: the root sent ses_count a message after the withdrawal: ${TOLD_BACK}`)
+    expect(run.notes).toContain("withdrawn: session ses_a sent ses_num a report (done) after the withdrawal: 391")
+    expect(run.notes).toContain("withdrawn: session ses_a wrote numbers/a.txt after the withdrawal")
+    expect(run.notes).toContain("withdrawn: session ses_count wrote count/total.txt after the withdrawal")
+    expect(run.notes).toContain("withdrawn: no session asked the person with its question tool")
+    expect(run.notes.some((note) => note.includes("wrote numbers/b.txt after the withdrawal"))).toBe(false)
+    expect(run.takenBack).toEqual(TAKEN_BACK)
+  })
+
+  test("a withdrawal that was not passed on: the sessions above tell nobody, and the files written while the text stood may keep the word", () => {
+    const run = check(withdrawnRun("not-passed"), ["--withdrawn"])
+    expect(run.failed).toEqual([])
+    expect(run.exitCode).toBe(0)
+    expect(run.notes).toContain("withdrawn: session ses_num passed the text on to nobody")
+    expect(run.notes).toContain("withdrawn: the root passed the text on to nobody")
+    expect(run.notes.filter((note) => note.includes("after the withdrawal"))).toEqual([
+      "withdrawn: session ses_count sent ses_root a report (done) after the withdrawal: 42",
+      "withdrawn: session ses_count wrote count/total.txt after the withdrawal",
+    ])
+    expect(run.notes).toContain("files: numbers/a.txt=391, numbers/b.txt=1024 checked, count/total.txt=42")
+  })
+
+  test("a root that passed the text on and says nothing of the withdrawal fails that check, and the held part's file with it", () => {
+    expect(check(withdrawnRun("untold"), ["--withdrawn"]).failed).toEqual([W_FILES, W_TOLD])
+  })
+
+  test("a root that had passed nothing on and messages a session after the withdrawal fails only that check", () => {
+    const run = check(withdrawnRun("stray"), ["--withdrawn"])
+    expect(run.failed).toEqual([W_ONLY])
+    expect(run.notes).toContain(`withdrawn: the root sent ses_num a message after the withdrawal: ${TOLD_BACK}`)
+  })
+
+  test("a message to the half after the withdrawal, and the work it redoes, are noted and fail no check", () => {
+    const run = check(withdrawnRun("to-half"), ["--withdrawn"])
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain(`withdrawn: session ses_num sent the half a message after the withdrawal: ${TO_HALF}`)
+    expect(run.notes).toContain("withdrawn: session ses_b wrote numbers/b.txt after the withdrawal")
+  })
+
+  test("a revert no withdrawal envelope followed fails the envelope count and the checks that read what came after it", () => {
+    const run = check(withdrawnRun("no-withdrawal"), ["--withdrawn"])
+    expect(run.failed).toEqual([W_FILES, W_ONE, W_TOLD, W_ONLY])
+    expect(run.notes).toContain("withdrawn: no session got a withdrawal envelope")
+  })
+
+  test("a half whose transcript still holds the text fails only that check", () => {
+    expect(check(withdrawnRun("kept"), ["--withdrawn"]).failed).toEqual([W_GONE])
+  })
+
+  test("a second report upward after the withdrawal is a correction, with no later report from a child before it", () => {
+    const run = check(withdrawnRun("corrected"), ["--withdrawn"])
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain("withdrawn: session ses_num sent ses_root a report (done) after the withdrawal: The text was taken back; both files stay as they are.")
+  })
+
+  test("a re-read with --saved keeps the withdrawal checks and the revert, which summary.json records", () => {
+    const run = check(withdrawnRun("passed-on"), ["--withdrawn"], [])
+    expect(run.withdrawn).toBe(true)
+    expect(run.failed).toEqual([])
+    expect(Object.keys(run.checks)).toHaveLength(14)
+    expect(run.takenBack).toEqual(TAKEN_BACK)
+  })
+})
+
+type TakenBack = { sessionID: string; messageID: string; last?: string; at: number }
+type WithdrawalState = { typed?: { sessionID: string; text: string }; takenBack?: TakenBack; created: string[] }
+const { withdrawalOf, rests, aboveOf, personWords, STANDS_ANSWER, WITHDRAWAL_GRACE_MS } = (await import(pathToFileURL(join(import.meta.dir, "..", "e2e", "real-model-recursive-release.mjs")).href)) as {
+  withdrawalOf: (tree: Map<string, Entry>, state: WithdrawalState, now: number) => { takeBack?: Omit<TakenBack, "at">; release?: string } | undefined
+  rests: (id: string, entry: Entry, takenBack?: TakenBack) => boolean
+  aboveOf: (tree: Map<string, Entry>, sessionID: string) => string[]
+  personWords: (form: { fields: Field[] }, words: string) => Array<{ key: string; value: unknown; said: string }>
+  STANDS_ANSWER: string
+  WITHDRAWAL_GRACE_MS: number
+}
+
+describe("the recursive checker's take-back of typed text and its hold on the count part", () => {
+  const TYPED = { sessionID: "ses_b", text: PERSON_NOTE }
+  const at = (stage: number, variant: Withdrawn = "passed-on") => {
+    const { lists, marks, typed, taken } = withdrawnStages(variant)
+    const tree = treeOf(Object.fromEntries(Object.entries(lists).map(([id, list]) => [id, list.slice(0, marks[stage]![id])])), NESTED)
+    tree.get("ses_count")!.list = [lists.ses_count![0]!, inWait(".go-count")]
+    tree.get("ses_b")!.list = stage === 1 ? typed : stage === 2 ? taken : [lists.ses_b![0]!, inWait(".go-halves")]
+    return tree
+  }
+
+  test("nothing is taken back before the text is typed, while the half is in its turn, or once the count part is released", () => {
+    expect(withdrawalOf(at(1), { created: [".go-halves"] }, 0)).toBeUndefined()
+    expect(withdrawalOf(at(0), { typed: TYPED, created: [".go-halves"] }, 0)).toBeUndefined()
+    expect(withdrawalOf(at(1), { typed: TYPED, created: [".go-halves", ".go-count"] }, 0)).toBeUndefined()
+  })
+
+  test("once the half and every session above it have ended their turns, the revert goes to the typed message, and the message before it is kept as the half's last", () => {
+    expect(aboveOf(at(1), "ses_b")).toEqual(["ses_num", "ses_root"])
+    expect(withdrawalOf(at(1), { typed: TYPED, created: [".go-halves"] }, 0)).toEqual({ takeBack: { sessionID: "ses_b", messageID: "msg_typed", last: "msg_b_wait" } })
+  })
+
+  test("a session above still in the turn the envelope opened holds the revert back", () => {
+    const tree = at(1)
+    const root = tree.get("ses_root")!
+    root.list = root.list.slice(0, root.list.findIndex((message) => message.type === "synthetic" && String(message.text).includes('in="ses_b"')) + 1)
+    expect(withdrawalOf(tree, { typed: TYPED, created: [".go-halves"] }, 0)).toBeUndefined()
+  })
+
+  test("a half that ended its turn without the text in its transcript has nothing to take back, and the count part goes on", () => {
+    const tree = at(1)
+    tree.get("ses_b")!.list = tree.get("ses_b")!.list.filter((message) => message.type !== "user" || !String(message.text).includes(PERSON_NOTE))
+    expect(withdrawalOf(tree, { typed: TYPED, created: [".go-halves"] }, 0)).toEqual({
+      release: "the text typed into the half is not in its transcript, and it and every session above it have ended their turns",
+    })
+  })
+
+  test("after the revert the half rests on the message before the typed one, and the count part is held until each session that had the text has the withdrawal and has ended its turn", () => {
+    const state = { typed: TYPED, takenBack: { ...TAKEN_BACK, at: 1000 }, created: [".go-halves"] }
+    const tree = at(2)
+    expect(rests("ses_b", tree.get("ses_b")!, state.takenBack)).toBe(true)
+    expect(rests("ses_b", tree.get("ses_b")!)).toBe(false)
+    expect(rests("ses_b", at(2, "to-half").get("ses_b")!)).toBe(true)
+    expect(withdrawalOf(tree, state, 2000)).toEqual({ release: "the withdrawal has reached each session that had the text, and each has ended its turn" })
+    const telling = at(2)
+    telling.get("ses_root")!.list = telling.get("ses_root")!.list.slice(0, -2)
+    expect(withdrawalOf(telling, state, 2000)).toBeUndefined()
+  })
+
+  test("a withdrawal that does not arrive holds the count part for the grace, then lets it go and says why", () => {
+    const state = { typed: TYPED, takenBack: { ...TAKEN_BACK, at: 1000 }, created: [".go-halves"] }
+    const tree = at(2, "no-withdrawal")
+    expect(withdrawalOf(tree, state, 1000 + WITHDRAWAL_GRACE_MS - 1)).toBeUndefined()
+    expect(withdrawalOf(tree, state, 1000 + WITHDRAWAL_GRACE_MS)).toEqual({ release: "not every session that had the text got a withdrawal within 30 s of the revert" })
+    for (const id of ["ses_num", "ses_root"]) tree.get(id)!.list = tree.get(id)!.list.filter((message) => message.type !== "synthetic" || !String(message.text).includes('route="prompt"'))
+    expect(withdrawalOf(tree, state, 1000 + WITHDRAWAL_GRACE_MS)).toEqual({ release: "no session above the half had the text, so none got a withdrawal within 30 s of the revert" })
+  })
+
+  test("with --withdrawn a tree with no half at depth 2 to type into has the count wait released first, then the halves", () => {
+    const tree = treeOf({ ses_root: [user("the job"), step("tool-calls", spawn("ses_a"), spawn("ses_b"), spawn("ses_count")), step("stop", say("split: 3 parts")), idle()], ses_a: [user("half a"), inWait(".go-halves")], ses_b: [user("half b"), inWait(".go-halves")], ses_count: [user("count"), inWait(".go-count")] }, FLAT)
+    const state = { finding: false, conflict: false, withdrawn: true, told: false, created: [] as string[] }
+    const why = `no half for numbers/b.txt at depth 2 is in a turn to take the person's message${QUIET}`
+    expect(releaseOf(tree, "ses_root", state)).toEqual({ file: ".go-count", why })
+    tree.get("ses_count")!.list = [user("count"), step("tool-calls", write("count/total.txt"), send("ses_root", "42", "done")), step("stop", say("Reported.")), idle()]
+    expect(releaseOf(tree, "ses_root", { ...state, created: [".go-count"] })).toEqual({ file: ".go-halves", why })
+  })
+
+  test("the person answers a question in --withdrawn in words, whatever the options", () => {
+    const picks = personWords({ fields: [{ key: "q", type: "string", description: ASKED, options: options(OVERRULE, KEEP) }, { key: "n", type: "number", default: 3 }] }, STANDS_ANSWER)
+    expect(answerOf(picks)).toEqual({ q: STANDS_ANSWER, n: 3 })
+    expect(picks[0]!.said).toBe(STANDS_ANSWER)
+  })
+})
+
+async function liveWithdrawn(variant: "passed-on" | "not-passed") {
+  const { lists, marks, typed, taken, files } = withdrawnStages(variant)
+  const work = mkdtempSync(join(tmpdir(), "rmr-"))
+  mkdirSync(join(work, "project"))
+  for (const [file, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(work, "project", file)), { recursive: true })
+    writeFileSync(join(work, "project", file), `${text}\n`)
+  }
+  const calls: string[] = []
+  let stage = 0
+  let early = false
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname
+      const released = existsSync(join(work, "project", ".go-count"))
+      if (released && stage < 2) early = true
+      if (request.method === "POST") {
+        calls.push(`${path.replace("/api/session/", "")} ${await request.text()}`)
+        if (path === "/api/session/ses_b/prompt") stage = 1
+        if (path === "/api/session/ses_b/revert/commit") stage = 2
+        return Response.json({})
+      }
+      const id = path.split("/")[3] ?? ""
+      if (path.endsWith("/form")) return Response.json({ data: [] })
+      if (stage === 2 && released) return Response.json({ data: id === "ses_b" ? taken : lists[id] })
+      if (id === "ses_count") return Response.json({ data: [lists.ses_count![0], inWait(".go-count")] })
+      if (id === "ses_b") return Response.json({ data: stage === 0 ? [lists.ses_b![0], inWait(".go-halves")] : stage === 1 ? typed : taken })
+      if (id === "ses_a" && stage === 0) return Response.json({ data: [lists.ses_a![0], inWait(".go-halves")] })
+      return Response.json({ data: lists[id]!.slice(0, marks[stage]![id]) })
+    },
+  })
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("COURIER_"))), WORK: work, COURIER_EXPECT: Object.values(FILES).join(" "), COURIER_FILES: Object.keys(files).join(" ") }
+  try {
+    const run = Bun.spawn([process.execPath, CHECKER, "ses_root", "--withdrawn"], { env: { ...env, SERVER: server.url.origin, OPENCODE_PASSWORD: "test" }, stdout: "pipe", stderr: "ignore" })
+    const log = await new Response(run.stdout).text()
+    const exitCode = await run.exited
+    const live = JSON.parse(readFileSync(join(work, "summary.json"), "utf8")) as { notes: string[]; checks: Record<string, boolean>; takenBack?: TakenBack }
+    const reread = Bun.spawnSync([process.execPath, CHECKER, "ses_root", "--saved"], { env })
+    const saved = JSON.parse(readFileSync(join(work, "summary.json"), "utf8")) as { notes: string[]; checks: Record<string, boolean>; withdrawn: boolean; takenBack?: TakenBack }
+    return { exitCode, log, calls, early, live, saved: { exitCode: reread.exitCode, ...saved }, timeline: readFileSync(join(work, "timeline.txt"), "utf8"), halves: existsSync(join(work, "project", ".go-halves")), count: existsSync(join(work, "project", ".go-count")) }
+  } finally {
+    await server.stop(true)
+    rmSync(work, { recursive: true, force: true })
+  }
+}
+
+test("run live with --withdrawn, the checker types the text into the half, takes it back with a staged and committed revert once the turns above have ended, and holds the count part until the withdrawal has come down", async () => {
+  const [run, silent] = await Promise.all([liveWithdrawn("passed-on"), liveWithdrawn("not-passed")])
+  expect(run.calls).toEqual([
+    `ses_b/prompt ${JSON.stringify({ text: PERSON_NOTE })}`,
+    `ses_b/revert/stage ${JSON.stringify({ messageID: "msg_typed", files: false })}`,
+    "ses_b/revert/commit {}",
+  ])
+  expect(silent.calls).toEqual(run.calls)
+  for (const one of [run, silent]) {
+    expect(one.early).toBe(false)
+    expect(one.halves).toBe(true)
+    expect(one.count).toBe(true)
+    expect(one.exitCode).toBe(0)
+    expect(one.log).toContain("(took the text back in ses_b as the person: a revert staged at msg_typed with files: false, then committed)")
+    expect(one.log).toContain("(the withdrawal has reached each session that had the text, and each has ended its turn: created .go-count)")
+    expect(one.timeline).toContain("-- the text typed here was taken back, and every message after it went with it")
+    expect(one.live.takenBack).toMatchObject({ sessionID: "ses_b", messageID: "msg_typed", last: "msg_b_wait" })
+    expect(one.saved.exitCode).toBe(0)
+    expect(one.saved.withdrawn).toBe(true)
+    expect(one.saved.takenBack).toEqual(one.live.takenBack)
+    expect(one.saved.checks).toEqual(one.live.checks)
+    expect(one.saved.notes).toEqual(one.live.notes)
+  }
+}, 30_000)

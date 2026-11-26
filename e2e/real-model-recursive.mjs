@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
   CONFLICT_FILE,
+  answerOf,
   GO_COUNT,
   GO_HALVES,
   childOf,
@@ -12,6 +13,8 @@ import {
   isCount,
   isHalfB,
   passedDown,
+  personAnswer,
+  questionsOf,
   plainAfter,
   releaseOf,
   reportsTo,
@@ -32,13 +35,14 @@ const saved = flags.includes("--saved")
 const server = process.env.SERVER
 const auth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD}`).toString("base64")}`
 const work = process.env.WORK
-const savedFlag = (name) => {
+const savedField = (name) => {
   try {
-    return JSON.parse(readFileSync(join(work, "summary.json"), "utf8"))[name] === true
+    return JSON.parse(readFileSync(join(work, "summary.json"), "utf8"))[name]
   } catch {
-    return false
+    return undefined
   }
 }
+const savedFlag = (name) => savedField(name) === true
 const fault = flags.includes("--fault") || (saved && savedFlag("fault"))
 const staged = flags.includes("--staged") || (saved && savedFlag("staged"))
 const finding = flags.includes("--finding") || (saved && savedFlag("finding"))
@@ -126,6 +130,26 @@ async function tellAsPerson(sessionID, text, who) {
   console.log(`  (told ${sessionID}, ${who}, as the person: ${text})`)
 }
 
+const answers = saved ? (savedField("answers") ?? []) : []
+const answeredForms = new Set()
+async function answerRoot() {
+  const response = await fetch(`${server}/api/session/${rootID}/form`, { headers: { authorization: auth } })
+  if (!response.ok) throw new Error(`forms of ${rootID}: HTTP ${response.status}`)
+  for (const form of (await response.json()).data ?? []) {
+    if (answeredForms.has(form.id)) continue
+    const picks = personAnswer(form)
+    const reply = await fetch(`${server}/api/session/${rootID}/form/${form.id}/reply`, {
+      method: "POST",
+      headers: { authorization: auth, "content-type": "application/json" },
+      body: JSON.stringify({ answer: answerOf(picks) }),
+    })
+    if (!reply.ok) throw new Error(`the person's answer to form ${form.id}: HTTP ${reply.status}`)
+    answeredForms.add(form.id)
+    answers.push({ form: form.id, picks: picks.map(({ question, said }) => ({ question, said })) })
+    console.log(`  (answered the root's form ${form.id} as the person: ${picks.map((pick) => pick.said).join("; ")})`)
+  }
+}
+
 async function readTree() {
   const sessions = new Map([[rootID, { parentID: undefined, depth: 0, list: await messages(rootID) }]])
   for (const [id, entry] of sessions) {
@@ -145,6 +169,7 @@ let contradicted = false
 for (;;) {
   let done = false
   try {
+    if (conflict && !saved) await answerRoot().catch((error) => console.log(`  (could not answer the root's forms, trying again: ${error.message})`))
     tree = await readTree()
     const count = finding && !saved && !told ? [...tree].find(([, entry]) => entry.depth === 1 && isCount(entry.list) && hasRun(entry.list) && !settled(entry.list)) : undefined
     if (count) {
@@ -473,6 +498,11 @@ if (conflict) {
     notes.push(`conflict: ${who(send.id)} messaged the half after the envelope${COUNTERMANDS.some((pattern) => pattern.test(send.message)) ? " (possible countermand)" : ""}: ${short(send.message, 200)}`)
   if (halfID && !toHalf.length) notes.push("conflict: no session above the half messaged it after the envelope")
   for (const id of conflictWriters) notes.push(`conflict: ${who(id)} wrote ${CONFLICT_FILE}`)
+  const asks = [...tree].flatMap(([id, entry]) => toolsOf(entry.list).filter((part) => part.name === "question").map((part) => ({ id, part })))
+  for (const { id, part } of asks) notes.push(`conflict: ${who(id)} asked the person with its question tool (${part.state.status}): ${short(questionsOf(part), 300)}`)
+  if (!asks.length) notes.push("conflict: no session asked the person with its question tool")
+  for (const { form, picks } of answers)
+    notes.push(`conflict: the person answered the root's form ${form}: ${short(picks.map((pick) => `${pick.question ? `"${pick.question}" ` : ""}-> ${pick.said}`).join("; "), 300)}`)
 }
 if (fault && !faulty.length) notes.push("fault: every session below a sub-orchestrator first reported done; the fault did not reach a leaf")
 if (staged) {
@@ -555,7 +585,7 @@ console.log(`result: ${verdict}${verdict === "inconclusive" ? " (checks failed, 
 writeFileSync(
   join(work, "summary.json"),
   JSON.stringify(
-    { verdict, rootID, fault, staged, finding, conflict, sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
+    { verdict, rootID, fault, staged, finding, conflict, ...(conflict ? { answers } : {}), sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
     null,
     2,
   ),

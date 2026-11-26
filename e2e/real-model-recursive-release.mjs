@@ -102,3 +102,22 @@ export function releaseOf(tree, rootID, state) {
   const where = stoppedAt(tree, rootID, state, file)
   return where ? { file, why: `${where}, and every session has ended its turn or sits in a wait on a file` } : undefined
 }
+
+export const CONFLICT_ANSWER = "The text I typed stands: numbers/b.txt is not written in this job, since that file is handled outside it. Go on with the rest."
+const OVERRULES = /\b(?:anyway|override|overrule|ignore|drop|disregard|original task|as (?:the|its) task says)\b/i
+const KEEPS = /\b(?:leave|left|skip|keep|stands?|honou?r|respect|follow|obey|unwritten|outside|as (?:typed|written|told|instructed))\b/i
+const NO_WRITE = /\b(?:not|don't|never|without)\b[^.;:]*\bwrit/i
+const WRITES = /\bwrit(?:e|es|ing)\b/i
+const overrules = (text) => OVERRULES.test(text) || (WRITES.test(text) && !NO_WRITE.test(text))
+export const keepsText = (text) => !overrules(text) && (KEEPS.test(text) || NO_WRITE.test(text))
+export function personAnswer(form) {
+  return form.fields.flatMap((field) => {
+    if (field.type !== "string" && field.type !== "multiselect") return field.default === undefined ? [] : [{ key: field.key, value: field.default, said: String(field.default) }]
+    const option = (field.options ?? []).find((one) => keepsText(`${one.label} ${one.description ?? ""}`))
+    const value = option?.value ?? CONFLICT_ANSWER
+    return [{ key: field.key, question: field.description ?? field.title ?? field.key, value: field.type === "multiselect" ? [value] : value, said: option?.label ?? CONFLICT_ANSWER }]
+  })
+}
+export const answerOf = (picks) => Object.fromEntries(picks.map((pick) => [pick.key, pick.value]))
+export const questionsOf = (part) =>
+  (part.state.input?.questions ?? []).map((one) => `"${one.question ?? ""}"${one.options?.length ? ` (${one.options.map((option) => option.label).join(" | ")})` : ""}`).join("; ")

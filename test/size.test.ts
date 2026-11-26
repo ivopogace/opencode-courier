@@ -5,7 +5,7 @@ import { resolve } from "node:path"
 const root = resolve(import.meta.dir, "..")
 const read = (file: string) => readFileSync(resolve(root, file), "utf8")
 
-const REFERENCE_WORDS = 5227
+const REFERENCE_WORDS = 5264
 const GENERATED_TABLE = /<!-- compat-table:start[\s\S]*?<!-- compat-table:end -->/g
 const README_LINES = 170
 

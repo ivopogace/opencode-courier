@@ -391,6 +391,18 @@ export function typedNotice(sessionID: string, title: string | undefined, at: nu
   ].join("\n")
 }
 
+export function withdrawnNotice(sessionID: string, title: string | undefined, now: number, texts: ReadonlyArray<{ readonly at: number; readonly text: string }>) {
+  const named = title === undefined ? "" : ` ("${title}")`
+  return [
+    `Text that arrived in the prompt of session ${sessionID}${named}, a session under yours, and that courier passed to you in a ` +
+      `route="prompt" envelope, was taken back: it is no longer in the transcript of ${sessionID} and no longer stands as the person's. ` +
+      `${sessionID} may already have acted on it, and courier undoes nothing that was done because of it, by ${sessionID}, by you or by a ` +
+      "session you passed it to. Where you passed it on, tell those sessions that it is withdrawn, and only them: every session between " +
+      `${sessionID} and you and every session above you already has this envelope.`,
+    ...texts.flatMap(({ at, text }) => ["", `Arrived at ${clock(at, now)}:`, text]),
+  ].join("\n")
+}
+
 function waitLine(delay: number, at: number | undefined) {
   const until = at === undefined ? "" : `, until about ${clock(at + delay, at)}`
   return `The provider asked to wait about ${wait(delay)} before trying again${until}.`

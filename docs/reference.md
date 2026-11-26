@@ -352,6 +352,10 @@ type into a session under it stays there.
 
 The sessions above get it as progress, so they owe no report for it.
 
+Taking the text back, with the TUI's stop before the model answers or with `/undo` and your next
+prompt, is passed on too: while the tree is at work, each session it reached is told it no longer
+stands.
+
 **Other ways to reach the tree.** `courier_send` without a `status` is an ordinary message, so a
 parent can pass a finding on to its other children. A `status` on a message to a session below the
 sender is dropped, and the result says so.

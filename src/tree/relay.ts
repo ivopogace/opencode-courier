@@ -1,15 +1,17 @@
-import { envelope, clipText } from "../kernel/protocol.js"
+import { envelope, clipText, clipWords } from "../kernel/protocol.js"
 import { claim } from "../platform/bounded.js"
+import { millis } from "../platform/json.js"
 import { bySession, lineageBy } from "./domain.js"
 import { live } from "./limits.js"
-import type { ChildStore, WatchPorts } from "./ports.js"
+import type { ChildStore, Passed, WatchPorts } from "./ports.js"
 import { reportOf } from "./report.js"
 import { runs } from "./running.js"
 import { childStore } from "./store.js"
-import { BRIEF_FIRST_LINE, typedNotice } from "./text.js"
+import { BRIEF_FIRST_LINE, typedNotice, withdrawnNotice } from "./text.js"
 import { noteSent, waitsInInbox, type Enqueued, type InboxSettled } from "./wake.js"
 
 const TYPED_MAX = 4000
+const EXCERPT_MAX = 200
 
 function typedText(item: Enqueued["data"]["item"]) {
   if (item.type !== "user") return undefined
@@ -82,31 +84,29 @@ async function ancestorsOf(children: ChildStore, sessionID: string) {
   return indexed.length ? indexed : (await children.lineage(sessionID)).map((entry) => entry.parentID)
 }
 
+async function steer(ports: WatchPorts, sessionID: string, text: string, description: string, metadata: Record<string, string | boolean>) {
+  const sent = await ports.session.synthetic({ sessionID, text, description, metadata, delivery: "steer" })
+  await noteSent(ports, { sessionID, inboxID: sent.id, text, description }).catch((error: unknown) =>
+    ports.log(`courier fan-up: could not note the wake of ${sessionID}: ${String(error)}`),
+  )
+}
+
 async function fanUp(ports: WatchPorts, ancestors: ReadonlyArray<string>, sessionID: string, title: string | undefined, typed: { readonly at: number; readonly text: string }) {
   const text = envelope("courier", typedNotice(sessionID, title, typed.at, ports.now(), typed.text), { route: "prompt", in: sessionID })
-  const description = `Text typed into ${sessionID}`
-  let passed = 0
+  const passed: string[] = []
   for (const ancestor of ancestors) {
     try {
-      const sent = await ports.session.synthetic({
-        sessionID: ancestor,
-        text,
-        description,
-        metadata: { source: "courier", route: "prompt", in: sessionID },
-        delivery: "steer",
-      })
-      passed += 1
-      await noteSent(ports, { sessionID: ancestor, inboxID: sent.id, text, description }).catch((error: unknown) =>
-        ports.log(`courier fan-up: could not note the wake of ${ancestor}: ${String(error)}`),
-      )
+      await steer(ports, ancestor, text, `Text typed into ${sessionID}`, { source: "courier", route: "prompt", in: sessionID })
+      passed.push(ancestor)
     } catch (error) {
       ports.log(`courier fan-up: could not pass text typed into ${sessionID} to ${ancestor}: ${String(error)}`)
     }
   }
-  ports.log(`courier fan-up: text typed into ${sessionID} passed to ${passed} sessions`)
+  ports.log(`courier fan-up: text typed into ${sessionID} passed to ${passed.length} sessions`)
+  return passed
 }
 
-export async function relayTyped(ports: WatchPorts, seen: Set<string>, event: InboxSettled) {
+export async function relayTyped(ports: WatchPorts, seen: Set<string>, event: InboxSettled & { readonly created?: number }) {
   const { sessionID, inboxID } = event.data
   const children = childStore(ports.storage)
   const typed = await children.typedOf(sessionID, inboxID)
@@ -121,9 +121,67 @@ export async function relayTyped(ports: WatchPorts, seen: Set<string>, event: In
       return false
     }
     const entry = await children.indexedEntry(sessionID).catch(() => undefined)
-    await fanUp(ports, ancestors, sessionID, entry?.title, typed)
+    const to = await fanUp(ports, ancestors, sessionID, entry?.title, typed)
+    if (to.length)
+      await children
+        .passed(sessionID, { inboxID, at: typed.at, text: clipWords(typed.text, EXCERPT_MAX), to, delivered: event.created ?? ports.now() })
+        .catch((error: unknown) => ports.log(`courier fan-up: could not note the text passed up from ${sessionID}: ${String(error)}`))
     return true
   } finally {
     await children.forgetTyped(sessionID, inboxID)
+  }
+}
+
+export interface Reverted {
+  readonly id: string
+  readonly data: { readonly sessionID: string; readonly to: string }
+}
+
+async function takenBack(ports: WatchPorts, sessionID: string, to: string, passed: ReadonlyArray<Passed>) {
+  const messages = await ports.session.context({ sessionID }).catch((error: unknown) => {
+    ports.log(`courier fan-up: could not read the transcript of ${sessionID}, so only the message its revert names counts as taken back: ${String(error)}`)
+    return undefined
+  })
+  if (messages === undefined) return passed.filter((item) => item.inboxID === to)
+  const kept = new Set(messages.map((message) => message.id))
+  const start = millis(messages[0]?.time?.created)
+  const before = (item: Passed) => Number.isFinite(start) && item.delivered < start
+  return passed.filter((item) => item.inboxID === to || (!kept.has(item.inboxID) && !before(item)))
+}
+
+async function tellWithdrawn(ports: WatchPorts, sessionID: string, title: string | undefined, gone: ReadonlyArray<Passed>) {
+  let told = 0
+  for (const ancestor of new Set(gone.flatMap((item) => item.to))) {
+    const texts = gone.filter((item) => item.to.includes(ancestor))
+    const text = envelope("courier", withdrawnNotice(sessionID, title, ports.now(), texts), { route: "prompt", in: sessionID, withdrawn: "true" })
+    try {
+      await steer(ports, ancestor, text, `Text typed into ${sessionID} was taken back`, { source: "courier", route: "prompt", in: sessionID, withdrawn: true })
+      told += 1
+    } catch (error) {
+      ports.log(`courier fan-up: could not tell ${ancestor} that text typed into ${sessionID} was taken back: ${String(error)}`)
+    }
+  }
+  ports.log(`courier fan-up: text taken back in ${sessionID} told to ${told} sessions`)
+}
+
+export async function relayWithdrawn(ports: WatchPorts, seen: Set<string>, event: Reverted) {
+  const { sessionID, to } = event.data
+  const children = childStore(ports.storage)
+  if ((await children.indexedParent(sessionID)) === undefined) return false
+  const passed = await children.passedOf(sessionID)
+  if (!passed.length || !claim(seen, event.id)) return false
+  const gone = await takenBack(ports, sessionID, to, passed)
+  if (!gone.length) return false
+  try {
+    const root = (await ancestorsOf(children, sessionID)).at(-1)
+    if (root === undefined || !(await atWork(ports, children, sessionID, root))) {
+      ports.log(`courier fan-up: text taken back in ${sessionID} reached nobody: the tree has finished`)
+      return false
+    }
+    const entry = await children.indexedEntry(sessionID).catch(() => undefined)
+    await tellWithdrawn(ports, sessionID, entry?.title, gone)
+    return true
+  } finally {
+    await children.forgetPassed(sessionID, gone.map((item) => item.inboxID))
   }
 }

@@ -34,6 +34,7 @@ const isInstructionUpdate = (message) => /^<system-update>\n/.test(textOf(messag
 const SUMMARY = "## Objective\n- Courier test"
 
 const TYPED_ENVELOPE = /<courier from="courier" route="prompt" in="ses_\w+">/
+const WITHDRAWN_ENVELOPE = /<courier from="courier" route="prompt" in="ses_\w+" withdrawn="true">/
 
 const HOST_REPORT = /<background-result kind="subagent" sessionID="(ses_\w+)" state="[^"]*"[^>]*>[\s\S]*?<\/background-result>/g
 
@@ -417,6 +418,7 @@ function relayPersonWords(messages, lastAssistant) {
   const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
   if (briefedBy && first.includes("CHILD-PERSON-WORDS")) {
     if (recent.includes("PERSON-LATE")) return { text: "LATE HEARD" }
+    if (recent.includes("PERSON-TAKES-BACK")) return { text: "ANSWERED TOO LATE", hold: true }
     if (recent.includes("PERSON-SAYS") && sent.length === 0) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "WORDS DONE", status: "done" } }
     return { text: sent.length ? "WORDS REPORTED" : "LEAF WAITS" }
   }
@@ -426,13 +428,22 @@ function relayPersonWords(messages, lastAssistant) {
     const later = messages.map((message) => textOf(message.content)).join("\n")
     const reported = sent.some((item) => (item.function.arguments ?? "").includes("RELAYER DONE"))
     if (!reported && /<courier from="ses_\w+" status="done">/.test(later)) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "RELAYER DONE", status: "done" } }
-    const replies = [TYPED_ENVELOPE.test(later) && "RELAYER HEARD TYPED", recent.includes('ended="without-report"') && "RELAYER WOKE", reported && "RELAYER REPORTED"]
+    const replies = [
+      TYPED_ENVELOPE.test(later) && "RELAYER HEARD TYPED",
+      WITHDRAWN_ENVELOPE.test(recent) && "RELAYER HEARD WITHDRAWN",
+      recent.includes('ended="without-report"') && "RELAYER WOKE",
+      reported && "RELAYER REPORTED",
+    ]
     return { text: replies.filter(Boolean).join(" ") || "RELAYER WAITS" }
   }
   if (!first.includes("COURIER-RELAY-PERSON")) return undefined
   if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-RELAYS-PERSON" } }
   if (call?.function?.name === "courier_spawn") return { text: "ROOT SPAWNED" }
-  const replies = [TYPED_ENVELOPE.test(recent) && "ROOT HEARD TYPED", /<courier from="ses_\w+" status="done">/.test(recent) && "ROOT GOT REPORT"]
+  const replies = [
+    TYPED_ENVELOPE.test(recent) && "ROOT HEARD TYPED",
+    WITHDRAWN_ENVELOPE.test(recent) && "ROOT HEARD WITHDRAWN",
+    /<courier from="ses_\w+" status="done">/.test(recent) && "ROOT GOT REPORT",
+  ]
   return { text: replies.filter(Boolean).join(" ") || "ROOT WOKE" }
 }
 

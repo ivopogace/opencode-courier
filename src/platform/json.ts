@@ -12,3 +12,4 @@ export function millis(value: unknown) {
 }
 
 export const isNotFound = (error: unknown) => str(obj(error)._tag)?.includes("NotFound") ?? false
+export const isSessionNotFound = (error: unknown) => /^Session\.?NotFoundError$/.test(str(obj(error)._tag) ?? "")

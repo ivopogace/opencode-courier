@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs"
+import { isSessionNotFound } from "../platform/json.js"
 import { isExpired as expiredBy, type Exists } from "./domain.js"
 import { forgetChild, forgetReports } from "./forget.js"
-import type { ReportKeys, RosterEntry, RosterStorage } from "./ports.js"
+import type { ReportKeys, RosterEntry, RosterStorage, WatchPorts } from "./ports.js"
 import { childStore } from "./store.js"
 
 export { RETENTION_MS, type Exists } from "./domain.js"
@@ -37,20 +38,40 @@ export async function current(storage: RosterStorage, parentID: string, now: num
   return dropExpired(storage, await childStore(storage).children(parentID), now, exists)
 }
 
-export async function pruneExpired(storage: RosterStorage, now: number, exists: Exists = existsSync) {
+type Sessions = Pick<WatchPorts["session"], "get">
+
+export async function pruneExpired(storage: RosterStorage, now: number, exists: Exists = existsSync, session?: Sessions) {
   const children = childStore(storage)
-  const [reported, typed] = await Promise.all([
+  const none = (): ReadonlySet<string> => new Set<string>()
+  const [reported, typed, passed] = await Promise.all([
     children.reported().catch((): ReportKeys => new Map<string, string[]>()),
-    children.typedSessions().catch((): ReadonlySet<string> => new Set<string>()),
+    children.typedSessions().catch(none),
+    children.passedSessions().catch(none),
   ])
   const entries = await dropExpired(storage, await children.all(), now, exists)
-  await Promise.all([children.backfill(entries), dropOrphanedReports(storage, reported, entries), dropOrphanedTyped(storage, typed, entries)])
+  await Promise.all([
+    children.backfill(entries),
+    dropOrphanedReports(storage, reported, entries),
+    dropOrphanedTyped(storage, typed, entries),
+    dropDeletedPassed(storage, passed, session),
+  ])
 }
 
 async function dropOrphanedTyped(storage: RosterStorage, typed: ReadonlySet<string>, entries: ReadonlyArray<RosterEntry>) {
   const children = childStore(storage)
   const sessions = new Set(entries.map((entry) => entry.sessionID))
   await Promise.all([...typed].filter((sessionID) => !sessions.has(sessionID)).map((sessionID) => children.forgetTyped(sessionID).catch(() => undefined)))
+}
+
+async function dropDeletedPassed(storage: RosterStorage, passed: ReadonlySet<string>, session: Sessions | undefined) {
+  if (!session) return
+  const children = childStore(storage)
+  await Promise.all(
+    [...passed].map(async (sessionID) => {
+      const deleted = await session.get({ sessionID }).then(() => false, isSessionNotFound)
+      if (deleted) await children.forgetPassed(sessionID).catch(() => undefined)
+    }),
+  )
 }
 
 async function dropOrphanedReports(storage: RosterStorage, reported: ReportKeys, entries: ReadonlyArray<RosterEntry>) {

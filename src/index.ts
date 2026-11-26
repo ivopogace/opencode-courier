@@ -154,7 +154,7 @@ export const courier = () => Plugin.define({
     const instructions = (ctx.session as Partial<typeof ctx.session>).instructions
     await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, session: ctx.session, limits, roles, hiddenFromLeaf: [ANSWER_TOOL], instructions, log }, event))
 
-    const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
+    const pruned = pruneExpired(ctx.storage, Date.now(), undefined, ctx.session).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
     const leaveRelay = joinRelay(questionPorts)
     const noticed = noticeCutOff(questionPorts).catch((error: unknown) =>
       questionPorts.log(`courier question: stored questions: ${String(error)}`),

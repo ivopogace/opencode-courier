@@ -1130,10 +1130,10 @@ const takenBackIn = () =>
 const from = (id: string, text: string) => synthetic(`<courier from="${id}">\n${text}\n</courier>`)
 const waited = (file: string) => step("tool-calls", tool("shell", { command: waitCommand(file) }))
 const TAKEN_BACK = { sessionID: "ses_b", messageID: "msg_typed", last: "msg_b_wait", at: 0 }
-type Withdrawn = "passed-on" | "not-passed" | "untold" | "stray" | "to-half" | "no-withdrawal" | "kept" | "corrected"
+type Withdrawn = "passed-on" | "not-passed" | "untold" | "stray" | "to-half" | "no-withdrawal" | "kept" | "corrected" | "to-itself" | "itself-after"
 
 function withdrawnStages(variant: Withdrawn) {
-  const passed = variant !== "not-passed" && variant !== "stray" && variant !== "corrected"
+  const passed = variant !== "not-passed" && variant !== "stray" && variant !== "corrected" && variant !== "to-itself" && variant !== "itself-after"
   const arrives = variant !== "no-withdrawal"
   const numTells = passed && arrives
   const rootTells = numTells && variant !== "untold"
@@ -1158,7 +1158,7 @@ function withdrawnStages(variant: Withdrawn) {
     a.push(from("ses_num", TOLD_ON), step("tool-calls", write("numbers/a.txt"), send("ses_num", "391 checked", "done")), step("stop", say("Reported.")), idle())
     root.push(step("tool-calls", send("ses_count", TOLD_ON)), step("stop", say("Passed on.")), idle())
   } else {
-    num.push(step("stop", say("Noted.")), idle())
+    num.push(...(variant === "to-itself" ? [step("tool-calls", send("ses_num", TOLD_ON))] : []), step("stop", say("Noted.")), idle())
     root.push(step("stop", say("Noted.")), idle())
   }
   num.push(...reported([["ses_a", "done"], ["ses_b", "done"]]), ...(passed ? [report("ses_a", "done", "391 checked")] : []))
@@ -1178,7 +1178,8 @@ function withdrawnStages(variant: Withdrawn) {
         num.push(report("ses_b", "done", "1024"))
       }
       num.push(step("stop", say("Noted.")), idle())
-    } else if (variant === "corrected") num.push(step("tool-calls", send("ses_root", "The text was taken back; both files stay as they are.", "done")), step("stop", say("Reported.")), idle())
+    } else if (variant === "itself-after") num.push(step("tool-calls", send("ses_num", TOLD_BACK)), step("stop", say("Noted.")), idle())
+    else if (variant === "corrected") num.push(step("tool-calls", send("ses_root", "The text was taken back; both files stay as they are.", "done")), step("stop", say("Reported.")), idle())
     else num.push(step("stop", say("Noted.")), idle())
     if (rootTells) root.push(step("tool-calls", send("ses_count", TOLD_BACK)), step("stop", say("Told.")), idle())
     else if (variant === "stray") {
@@ -1258,6 +1259,28 @@ describe("the recursive checker with --withdrawn", () => {
     expect(run.failed).toEqual([])
     expect(run.notes).toContain(`withdrawn: session ses_num sent the half a message after the withdrawal: ${TO_HALF}`)
     expect(run.notes).toContain("withdrawn: session ses_b wrote numbers/b.txt after the withdrawal")
+  })
+
+  test("a session that sends a message to its own session passed the text on to nobody, and owes nobody word of the withdrawal", () => {
+    const run = check(withdrawnRun("to-itself"), ["--withdrawn"])
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain(`withdrawn: session ses_num sent a message to its own session, which passes the text on to nobody: ${TOLD_ON}`)
+    expect(run.notes).toContain("withdrawn: session ses_num passed the text on to nobody")
+  })
+
+  test("a message a session sends to its own session after the withdrawal tells no other session, and is quoted", () => {
+    const run = check(withdrawnRun("itself-after"), ["--withdrawn"])
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain(`withdrawn: session ses_num sent itself a message after the withdrawal: ${TOLD_BACK}`)
+  })
+
+  test("the half's reports are read from its parent's transcript once the revert has taken its own, and the notes say so", () => {
+    const lost = "withdrawn: the revert took the half's own messages after the text, its reports and model requests with them: its 2 report(s) are read from its parent's transcript, where one sent before its parent's report and delivered after it reads as late, and the usage leaves those requests out"
+    const run = check(withdrawnRun("to-half"), ["--withdrawn"])
+    expect(run.notes).toContain(lost)
+    expect(run.notes).toContain("session ses_b reported 2 times")
+    expect(check(withdrawnRun("passed-on"), ["--withdrawn"]).notes).toContain(lost.replace("its 2 report(s)", "its 1 report(s)"))
+    expect(check({ ...withdrawnRun("to-half"), summary: undefined }, ["--withdrawn"]).notes.some((note) => note.includes("the revert took the half's own messages"))).toBe(false)
   })
 
   test("a revert no withdrawal envelope followed fails the envelope count and the checks that read what came after it", () => {

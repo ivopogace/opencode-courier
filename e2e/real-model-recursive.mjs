@@ -465,9 +465,11 @@ const holders = halfID === undefined ? [] : [...tree].filter(([, entry]) => type
 const tellings = holders.map(([id, entry]) => {
   const withdrawals = withdrawalsAt(entry.list, halfID)
   const until = withdrawals[0] ?? Infinity
-  const sends = sendsOf(entry.list).filter((send) => send.to !== halfID && !(send.status && send.to === entry.parentID))
-  const passed = sends.filter((send) => send.index > typedAt(entry.list, halfID) && send.index < until)
-  return { id, until, withdrawals: withdrawals.length, passed, passedTo: [...new Set(passed.map((send) => send.to))], after: sends.filter((send) => send.index > until) }
+  const between = (send) => send.index > typedAt(entry.list, halfID) && send.index < until
+  const sends = sendsOf(entry.list).filter((send) => send.to !== halfID && send.to !== id && !(send.status && send.to === entry.parentID))
+  const passed = sends.filter(between)
+  const toItself = sendsOf(entry.list).filter((send) => send.to === id && between(send))
+  return { id, until, withdrawals: withdrawals.length, passed, toItself, passedTo: [...new Set(passed.map((send) => send.to))], after: sends.filter((send) => send.index > until) }
 })
 const reached = tellings.filter((one) => one.withdrawals > 0)
 const withdrawnChecks = [
@@ -578,12 +580,13 @@ if (withdrawn) {
   notes.push(takenBack ? `withdrawn: the checker took the text back in ${takenBack.sessionID} with a revert staged at ${takenBack.messageID}, then committed` : "withdrawn: the checker took no text back in this run")
   for (const one of tellings) {
     for (const send of one.passed) notes.push(`withdrawn: ${who(one.id)} passed the text on to ${send.to}: ${short(send.message ?? "", 200)}`)
+    for (const send of one.toItself) notes.push(`withdrawn: ${who(one.id)} sent a message to its own session, which passes the text on to nobody: ${short(send.message ?? "", 200)}`)
     if (!one.passed.length) notes.push(`withdrawn: ${who(one.id)} passed the text on to nobody`)
   }
   if (holders.length && !reached.length) notes.push("withdrawn: no session got a withdrawal envelope")
   const later = [...tree].flatMap(([id, entry]) => sendsOf(entry.list).filter((send) => after(id, entry.list, send.index, sendStart(entry.list, send))).map((send) => ({ id, send })))
   for (const { id, send } of later)
-    notes.push(`withdrawn: ${who(id)} sent ${send.to === halfID ? "the half" : send.to} a ${send.status ? `report (${send.status})` : "message"} after the withdrawal: ${short(send.message ?? "", 200)}`)
+    notes.push(`withdrawn: ${who(id)} sent ${send.to === id ? "itself" : send.to === halfID ? "the half" : send.to} a ${send.status ? `report (${send.status})` : "message"} after the withdrawal: ${short(send.message ?? "", 200)}`)
   if (reached.length && !later.length) notes.push("withdrawn: no session sent a message after the withdrawal")
   for (const file of files) {
     const writes = writesFile(file)
@@ -643,8 +646,16 @@ if (pollers.length) notes.push(`polled: ${pollers.map((id) => (id === rootID ? "
 for (const [id, entry] of spawned) {
   const report = reportOf(id)
   if (report) notes.push(`report from ${id} (depth ${entry.depth}): status ${statusOf(report.message)}`)
-  const sends = reportsTo(entry.list, entry.parentID).length
+  const sends = takenBack?.sessionID === id ? deliveriesFrom(tree.get(entry.parentID).list, id).length : reportsTo(entry.list, entry.parentID).length
   if (sends > 1) notes.push(`session ${id} reported ${sends} times`)
+}
+if (takenBack && tree.has(takenBack.sessionID)) {
+  const lost = tree.get(takenBack.sessionID)
+  const delivered = deliveriesFrom(tree.get(lost.parentID).list, takenBack.sessionID).length
+  notes.push(
+    `withdrawn: the revert took the half's own messages after the text, its reports and model requests with them: its ${delivered} report(s) are read from its parent's transcript, ` +
+      "where one sent before its parent's report and delivered after it reads as late, and the usage leaves those requests out",
+  )
 }
 if (files.length) notes.push(`files: ${files.map((file, index) => `${file}=${fileTexts[index] ?? "(missing)"}`).join(", ")}`)
 const subagents = [...tree.values()].reduce((n, entry) => n + toolsOf(entry.list).filter((part) => part.name === "subagent").length, 0)

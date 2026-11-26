@@ -203,8 +203,8 @@ reach it.
 other session gets one. A session that had passed the text on messages every session it passed it
 to once the withdrawal has reached it, and no session the withdrawal reached messages a session it
 had not passed the text to: one that passed nothing on tells nobody. Passing on is a `courier_send`
-between the two envelopes; a report upward and a message to the half count on neither side. The
-half's transcript no longer holds the text.
+between the two envelopes; a report upward, a message to the half and one a session sends to its own
+session count on neither side. The half's transcript no longer holds the text.
 
 **The files and the reply.** The envelope says courier undoes nothing, so work done because of the
 text is not checked: `numbers/a.txt` and `numbers/b.txt` pass with their number alone or followed
@@ -218,6 +218,8 @@ withdrawal, reports too: for a session that got the envelope, after its own; for
 the first one arrived. They name each session that wrote one of the files after it, and quote each
 question a session asked with its question tool and the person's answer. The checker answers the
 root's forms in words: before the revert that the text stands, after it that it was taken back.
+The revert takes the half's own reports and model requests after the text with it, so its reports
+are counted from its parent's transcript and the usage leaves those requests out; a note says so.
 
 **The person's step.** A person reads the messages sent after the withdrawal: whether each tells
 its session that the text is withdrawn, and what the tree did with the work the text had caused

@@ -234,7 +234,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:8 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:16 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:34 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:108 deleted:10 reminder:22 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:34 schedules:8 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:16 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:34 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:22 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -745,6 +745,44 @@ run_person_up() {
   check "it has a session above ask the person about a conflict, and names no other sender" \
     "$(grep -qF "ask the person with your question tool instead of telling $leaf to drop it" <<<"$envelope" && ! grep -qiE "cannot tell who|unverified|a client|password" <<<"$envelope" && echo true || echo false)"
   check "the grandchild's brief states the same rule" "$(has_text "$leaf" "stands as the person's until the person says otherwise" 10)"
+
+  scenario "text typed into a spawned session and taken back before the model answers, as the TUI's stop does, is withdrawn at every session above it"
+  out=$(prompt "COURIER-RELAY-PERSON")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  leaf=$(spawned_by "$mid")
+  check "a second tree is at work, its grandchild owing a report" "$([ -n "$leaf" ] && [ -n "$(reply_time "$leaf" "LEAF WAITS" 30)" ] && echo true || echo false)"
+  turn_ended "$leaf"
+  typed=$(api_post "session/$leaf/prompt" '{"text":"PERSON-TAKES-BACK: write the number to a file"}' | jq -r '.data.id // empty')
+  check "text sent to the grandchild through the API reached the root and the middle" \
+    "$([ -n "$typed" ] && [ "$(has_text "$root" "PERSON-TAKES-BACK" 30)" = true ] && [ "$(has_text "$mid" "PERSON-TAKES-BACK" 30)" = true ] && echo true || echo false)"
+  check "what was passed is kept under the message's id, with the sessions it reached" \
+    "$(kv get "passed/$leaf/$typed" | jq -r --arg mid "$mid" --arg root "$root" '.to == [$mid, $root] and (.text | startswith("PERSON-TAKES-BACK"))')"
+  check "the root and the middle replied to the envelope" \
+    "$([ -n "$(reply_time "$root" "ROOT HEARD TYPED" 45)" ] && [ -n "$(reply_time "$mid" "RELAYER HEARD TYPED" 45)" ] && echo true || echo false)"
+  turn_ended "$mid"
+  turn_ended "$root"
+  prompt_at=$(kv get "report/$mid/prompt" | jq -r .at)
+  check "the grandchild's turn is interrupted before the model answers" \
+    "$(api_post "session/$leaf/interrupt?resume=true" '{}' | jq -r '(.data // .) | .interrupted == true')"
+  check "and has ended" "$([[ $(person "experimental/session/$leaf/wait") == 20* ]] && echo true || echo false)"
+  check "the model answered the text with nothing" "$(api "session/$leaf/context" | jq -r --arg id "$typed" '.data | (map(.id) | index($id)) as $at |
+    $at != null and ([.[$at + 1:][] | select(.type == "assistant") | .content[]? | select(.type == "tool" or (.type == "text" and (.text | test("\\S"))))] | length == 0)')"
+  check "the revert is staged at the message, leaving the files alone" \
+    "$(api_post "session/$leaf/revert/stage" "$(jq -nc --arg id "$typed" '{messageID: $id, files: false}')" | jq -r --arg id "$typed" '.data.messageID == $id')"
+  check "and committed" "$([[ $(person "session/$leaf/revert/commit") == 20* ]] && echo true || echo false)"
+  check "the grandchild's transcript no longer has the text" "$(api "session/$leaf/message" | jq -r --arg id "$typed" 'any(.data[]; .id == $id) | not')"
+  check "the root replied to the withdrawal" "$([ -n "$(reply_time "$root" "ROOT HEARD WITHDRAWN" 45)" ] && echo true || echo false)"
+  check "the middle replied to the withdrawal" "$([ -n "$(reply_time "$mid" "RELAYER HEARD WITHDRAWN" 45)" ] && echo true || echo false)"
+  for session in "$root" "$mid"; do
+    check "$([ "$session" = "$root" ] && echo root || echo middle) holds exactly one withdrawal, naming the session and the route and showing the text" \
+      "$(api "session/$session/message" | jq -r --arg open "<courier from=\"courier\" route=\"prompt\" in=\"$leaf\" withdrawn=\"true\">" --arg leaf "$leaf" \
+        '[.data[] | select(.type == "synthetic") | .text | select(startswith($open) and contains("was taken back: it is no longer in the transcript of " + $leaf) and contains("PERSON-TAKES-BACK: write the number to a file"))] | length == 1')"
+  done
+  check "the plugin logged whom it told" "$(wait_log "courier fan-up: text taken back in $leaf told to 2 sessions" 10)"
+  check "what was passed is forgotten" "$([ -z "$(kv get "passed/$leaf/$typed")" ] && echo true || echo false)"
+  turn_ended "$mid"
+  check "the withdrawal asked the middle for no new report" "$(kv get "report/$mid/prompt" | jq -r --argjson prompt "$prompt_at" '.at == $prompt')"
 }
 
 run_person_message() {

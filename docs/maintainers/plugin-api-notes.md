@@ -58,11 +58,16 @@ code handles it.
 - **What the TUI sends** (`packages/tui/src/component/prompt/index.tsx`): typed text through
   `data.session.prompt`, a slash command through `session.command`; `!` calls `session.shell`, which
   admits no `user` item. A pin bump re-checks each. Where: `src/tree/relay.ts`.
-- **The TUI's stop can take the prompt back**: with an empty composer and nothing pending, an
+- **The TUI's stop can take the prompt back** (`interrupt` in
+  `packages/tui/src/component/prompt/index.tsx`): with an empty composer and nothing pending, an
   interrupt before the model's first text or tool call is followed by `revert.stage` and
-  `revert.commit` on the last `user` message, which goes back to the composer. Its text was fanned
-  up at `delivered`, and nothing tells the sessions above it was withdrawn; the plugin follows no
-  `session.revert.*` event.
+  `revert.commit` on the last `user` message, which goes back to the composer. `/undo` only stages;
+  the next prompt or compaction commits. `session.revert.committed` carries `to`, a message id, and
+  its projector (`packages/core/src/session/projector.ts`) has deleted that message and every later
+  one by the time the event is published. A delivered item's message keeps the item's `inboxID` as
+  its id, so courier matches the text it fanned up by id: `to` itself, and any other whose id the
+  transcript no longer has, unless it predates the compaction the transcript starts at. A pin bump
+  re-checks each. Where: `relayWithdrawn` in `src/tree/relay.ts`.
 - **`/goal`'s kickoff** (`packages/core/src/plugin/goal.ts`, `source: "goal"`) is `synthetic`, or a
   `user` prompt when it has attachments, which the fan-up passes up. A pin bump re-checks which.
   Where: `src/tree/relay.ts`.

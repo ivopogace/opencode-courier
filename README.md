@@ -147,8 +147,8 @@ More: [in the terminal](docs/reference.md#in-the-terminal).
 - Use `isolate: true` when children edit files in parallel. The worktree starts from the last
   commit, so keep providers in the global config or commit `opencode.json`.
 - To steer a running tree, open a child from the `/courier tree` panel and type: courier passes
-  what you write to the sessions above it, and a parent with the skill passes it to the parts it
-  changes ([details](docs/reference.md#steering-a-running-tree)).
+  what you write to the sessions above it, and tells them if you take it back; a parent with the
+  skill passes it to the parts it changes ([details](docs/reference.md#steering-a-running-tree)).
 - Schedule a [`courier_later` check-in](docs/reference.md#check-ins) for a long-running child.
 
 ## Contributing

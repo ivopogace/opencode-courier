@@ -59,6 +59,7 @@ race on gets keys of its own, one writer each. `test/store.test.ts` pins the tre
 | `later/<id>` | A pending `courier_later` message. |
 | `question/<requestID>` | A relayed question, until answered, at most 14 days (the 100 newest). |
 | `typed/<sessionID>/<inboxID>` | `{ at, text }`: a `user` item typed into a spawned session, from its enqueue until its fan-up is sent or skipped. |
+| `passed/<sessionID>/<inboxID>` | `{ at, text, to, delivered }`: text the fan-up passed up, its first 200 characters, the sessions it reached and when it was delivered, until a committed revert removes its message or the session is forgotten. |
 | `wake/<sessionID>/<inboxID>` | A courier message waiting in an inbox: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled`. |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers. |
 

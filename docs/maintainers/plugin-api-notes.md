@@ -1,10 +1,10 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.4.1` and OpenCode 2.4.1. Only two kinds are listed: traps no unit or e2e test
+`@opencode/plugin@2.4.2` and OpenCode 2.4.2. Only two kinds are listed: traps no unit or e2e test
 catches, and facts a pin bump must re-check. A trap a test fails on lives in that test. OpenCode's
 source is on the `v2` branch of https://github.com/anomalyco/opencode, each release tagged
-(`v2.4.1`); a host path is given where a pin bump must find the code again. A "since" stays only
+(`v2.4.2`); a host path is given where a pin bump must find the code again. A "since" stays only
 where the plugin branches on an older host. How the modules fit together:
 [architecture.md](architecture.md).
 
@@ -58,6 +58,11 @@ code handles it.
 - **What the TUI sends** (`packages/tui/src/component/prompt/index.tsx`): typed text through
   `data.session.prompt`, a slash command through `session.command`; `!` calls `session.shell`, which
   admits no `user` item. A pin bump re-checks each. Where: `src/tree/relay.ts`.
+- **The TUI's stop can take the prompt back**: with an empty composer and nothing pending, an
+  interrupt before the model's first text or tool call is followed by `revert.stage` and
+  `revert.commit` on the last `user` message, which goes back to the composer. Its text was fanned
+  up at `delivered`, and nothing tells the sessions above it was withdrawn; the plugin follows no
+  `session.revert.*` event.
 - **`/goal`'s kickoff** (`packages/core/src/plugin/goal.ts`, `source: "goal"`) is `synthetic`, or a
   `user` prompt when it has attachments, which the fan-up passes up. A pin bump re-checks which.
   Where: `src/tree/relay.ts`.
@@ -217,6 +222,12 @@ What a native child (`courier_spawn` with `native: true`) rests on:
   `src/tree/events.ts`.
 - **No generated title** for a session with a `parentID`; courier sets it. Where:
   `src/tree/spawn.ts`.
+- **Moving a session moves its direct children** in the same workspace
+  (`packages/core/src/session/move.ts`), a `move` inbox item each, so a native child follows its
+  parent's directory; a child's failed move is only logged.
+- **With the `compaction_jobs` flag a checkpoint lists the direct children** as `<subagents>`, with
+  id, title and `running` or `idle` (`packages/core/src/session/compaction-subagents.ts`), native
+  courier children included.
 
 ## OpenCode's subagent tool
 
@@ -271,9 +282,11 @@ SDK's `client.session.instructions` is a deprecated alias, and the plugin contex
 with it: a pin bump checks `packages/core/src/session/instruction-entry.ts`. Which entries courier
 writes: [architecture.md](architecture.md#instruction-entries).
 
-- **An entry renders as one `<context key="…">` block**, the last instruction source in the
-  *baseline*, the second system part; a part a `context` hook pushes comes after it. Where:
-  `src/tree/context.ts`.
+- **An entry renders as one `<context key="…">` block** in the *baseline*, the second system part.
+  Only the selected agent's `instructions` (`core/agent`, `packages/core/src/instructions/agent.ts`;
+  Plan mode's rules are one) come after the entries there, and an agent switch is announced as an
+  instruction update, so it moves no entry. A part a `context` hook pushes comes after the baseline.
+  Where: `src/tree/context.ts`.
 - **The baseline is fixed at the first step**, moved only by a compaction or a revert. So `role`,
   put before the first prompt, costs no cached prefix. A later `put` is announced at the next step
   by `session.instructions.updated`: the block for a new key, "The context under "<key>" changed and

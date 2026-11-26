@@ -144,8 +144,9 @@ async function takenBack(ports: WatchPorts, sessionID: string, to: string, passe
   })
   if (messages === undefined) return passed.filter((item) => item.inboxID === to)
   const kept = new Set(messages.map((message) => message.id))
-  const from = millis(messages[0]?.time?.created)
-  return passed.filter((item) => item.inboxID === to || (!kept.has(item.inboxID) && !(item.delivered < from)))
+  const start = millis(messages[0]?.time?.created)
+  const before = (item: Passed) => Number.isFinite(start) && item.delivered < start
+  return passed.filter((item) => item.inboxID === to || (!kept.has(item.inboxID) && !before(item)))
 }
 
 async function tellWithdrawn(ports: WatchPorts, sessionID: string, title: string | undefined, gone: ReadonlyArray<Passed>) {

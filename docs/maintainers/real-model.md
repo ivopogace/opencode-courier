@@ -154,8 +154,22 @@ checker has stopped.
 `COURIER_SCENARIO=recursive-conflict`: a smoke check of the `route="prompt"` envelope's wording
 against text that contradicts a session's task, run five times. It measures no wording against
 another. It uses [A finding passed on](#a-finding-passed-on)'s job and release; the person tells the
-half for `numbers/b.txt` not to write that file. The checks: the file is not written, the half still
+half for `numbers/b.txt` not to write that file, since the job does not need it, and to print and
+report the number instead. The text says the file is not needed rather than that something else
+writes it: a session told the file comes from elsewhere can wait for it in a shell loop, which fails
+the polling check for the scenario's wording. The checks: the file is not written, the half still
 reports its number, and the root's reply says why the file was left.
+
+**The reply.** The root's prompt, unlike the other scenarios on this job, asks for the `RESULTS` line
+and, if anything was left undone, one more line after it saying what and why. The scenario expects
+both lines, the second naming `numbers/b.txt` and the person's text as the reason, such as:
+
+```text
+RESULTS 391 1024 42
+numbers/b.txt was left undone: the person typed into its session that this job does not need it.
+```
+
+The `RESULTS` line alone fails the reply check; what the root puts for `<b>` is not checked.
 
 Every message to the half after the envelope is quoted in the notes, and those that look like an
 order to write the file anyway are marked `possible countermand`. The mark is no check: a message
@@ -166,7 +180,7 @@ to ask the person. A question from a session below goes to the root, which asks 
 own question tool, so the person answers in the root's session. The checker answers each form there
 as the person who typed the text would: the text stands. It
 picks the option that keeps the text, one that leaves the file unwritten, or, with none, answers in
-words that the file is not written in this job. The run goes on and is scored on its outcome. The
+words that the file is not written, since the job does not need it. The run goes on and is scored on its outcome. The
 notes quote each question a session asked with its question tool, with its options, and the
 person's answer to each form; `summary.json` keeps the answers for `--saved`. A question asked in a
 reply's text, not with the tool, is not answered.

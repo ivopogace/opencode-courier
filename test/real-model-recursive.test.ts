@@ -900,8 +900,10 @@ test("run live with --finding against a root that never passes the finding on, t
   }
 }, 20_000)
 
-const CONFLICT_NOTE = "Do not write numbers/b.txt. Print the number and report it to the session that started you; that file is handled outside this job."
+const CONFLICT_NOTE = "Do not write numbers/b.txt: this job does not need that file. Print the number and report it to the session that started you."
 const typedConflict = () => synthetic(`<courier from="courier" route="prompt" in="ses_b">\nAt 10:00 UTC this text arrived in session ses_b, a session under yours.\n\n${CONFLICT_NOTE}\n</courier>`)
+const RESULTS_ONLY = "RESULTS 391 1024 42"
+const LEFT_LINE = "numbers/b.txt was left undone: the person typed into its session that this job does not need it."
 type Conflict = "clean" | "twin" | "countermand" | "replaced" | "no-envelope" | "silent-report" | "silent-reply" | "asks"
 const ASKED = "Should ses_b write numbers/b.txt anyway?"
 const KEEP = "Leave numbers/b.txt unwritten, as typed"
@@ -930,7 +932,7 @@ function conflictRun(variant: Conflict): Run {
   const root = [user("the job"), step("tool-calls", loadSkill(), spawn("ses_num"), spawn("ses_count")), step("stop", say("split: 2 parts | numbers, count")), idle(), ...(variant === "no-envelope" ? [] : [typedConflict()])]
   if (variant === "asks") root.push(step("tool-calls", question()))
   root.push(step("stop", say("Noted.")), idle(), ...reported([["ses_num", "done"], ["ses_count", "done"]]))
-  root.push(step("stop", say(variant === "silent-reply" ? "RESULTS 391 42" : "RESULTS 391 42. numbers/b.txt was left: the person told that session not to write it.")), idle())
+  root.push(step("stop", say(variant === "silent-reply" ? RESULTS_ONLY : `${RESULTS_ONLY}\n${LEFT_LINE}`)), idle())
   const files = { "numbers/a.txt": "391", "count/total.txt": "42", ...(variant === "replaced" ? { "numbers/b.txt": "1024" } : {}) }
   return { tree: { ses_root: root, ses_num: num, ses_a: a, ses_b: b, ses_count: count }, files, expect: "391 42" }
 }
@@ -997,6 +999,13 @@ describe("the recursive checker with --conflict", () => {
   test("a report without the number and a reply silent about the file each fail their check", () => {
     expect(check(conflictRun("silent-report"), ["--conflict"]).failed).toEqual([C_REPORT])
     expect(check(conflictRun("silent-reply"), ["--conflict"]).failed).toEqual([C_REPLY])
+  })
+
+  test("the reply the prompt allows, the RESULTS line and one line after it for what was left and why, passes the reply check; the RESULTS line alone does not", () => {
+    expect(explainsLeft(`${RESULTS_ONLY}\n${LEFT_LINE}`)).toBe(true)
+    expect(explainsLeft("RESULTS 391 - 42\nnumbers/b.txt not written: the person told its session the job does not need it")).toBe(true)
+    expect(explainsLeft(RESULTS_ONLY)).toBe(false)
+    expect(explainsLeft("RESULTS 391 1024 42\nnumbers/b.txt is missing")).toBe(false)
   })
 })
 
@@ -1087,8 +1096,9 @@ test("run live with --conflict, the checker answers the root's question as the p
 }, 20_000)
 
 type Field = { key: string; type: string; description?: string; default?: unknown; options?: Array<{ value: string; label: string; description?: string }> }
-const { personAnswer, answerOf, keepsText, CONFLICT_ANSWER } = (await import(pathToFileURL(join(import.meta.dir, "..", "e2e", "real-model-recursive-release.mjs")).href)) as {
+const { personAnswer, answerOf, keepsText, explainsLeft, CONFLICT_ANSWER } = (await import(pathToFileURL(join(import.meta.dir, "..", "e2e", "real-model-recursive-release.mjs")).href)) as {
   personAnswer: (form: { fields: Field[] }) => Array<{ key: string; value: unknown; said: string }>
+  explainsLeft: (reply: string) => boolean
   answerOf: (picks: Array<{ key: string; value: unknown }>) => Record<string, unknown>
   keepsText: (text: string) => boolean
   CONFLICT_ANSWER: string
